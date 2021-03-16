@@ -1,6 +1,7 @@
 mod data;
 mod reader;
 mod utils;
+mod stdlib;
 
 use reader::{read, ParseError};
 use utils::print_ast;
