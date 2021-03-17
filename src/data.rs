@@ -101,6 +101,10 @@ impl Environment {
     pub fn borrow_mut(&mut self) -> RefMut<EnvironmentImpl> {
         self.0.borrow_mut()
     }
+
+    pub fn into_parent(self) -> Option<Environment> {
+        self.0.borrow().parent.clone()
+    }
 }
 
 impl EnvironmentImpl {

@@ -1,44 +1,70 @@
 use core::panic;
 
 use crate::data::{Environment, RuntimeVal, SExpr};
+use crate::utils::print_sexpr;
 
-pub fn eval(env: Environment, expr: &SExpr) -> RuntimeVal {
+type Env = Environment;
+
+// There are no lambdas yet.
+// There is a problem with dynamic scoping which we do not want.
+// When  we call a function we should only create a new env with global env as a parent
+//
+
+pub fn eval(globals: Env, locals: Option<Env>, expr: &SExpr) -> RuntimeVal {
     match expr {
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
-        SExpr::Symbol(val) => eval_symbol(env, val),
-        SExpr::List(val) => eval_list(env, val),
+        SExpr::Symbol(val) => eval_symbol(globals, locals, val),
+        SExpr::List(val) => eval_list(globals, locals, val),
     }
 }
 
-fn eval_symbol(env: Environment, expr: &String) -> RuntimeVal {
-    env.borrow()
+fn eval_symbol(globals: Env, locals: Option<Env>, expr: &String) -> RuntimeVal {
+    if let Some(mut env) = locals {
+        loop {
+            if let Some(val) = env.borrow().values.get(expr) {
+                return val.clone();
+            }
+            if let Some(val) = env.into_parent() {
+                env = val;
+            } else {
+                break;
+            }
+        }
+    }
+    globals
+        .borrow()
         .values
         .get(expr)
-        .expect("symbol not defined")
+        .expect(&format!("symbol {} not defined", expr))
         .clone()
 }
 
-fn eval_list(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_list(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
     if vals.is_empty() {
         return RuntimeVal::nil();
     }
-    if let Ok(val) = try_eval_special_form(env.clone(), vals) {
+    if let Ok(val) = try_eval_special_form(globals.clone(), locals.clone(), vals) {
         return val;
     }
-    let mut evaled: Vec<RuntimeVal> = vals.iter().map(|expr| eval(env.clone(), expr)).collect();
+    let mut evaled: Vec<RuntimeVal> = vals
+        .iter()
+        .map(|expr| eval(globals.clone(), locals.clone(), expr))
+        .collect();
     let func = evaled.remove(0);
     match func {
         RuntimeVal::Func(func) => {
-            let func_env = Environment::with_parent(env.clone());
+            let mut func_env = Environment::new();
             assert_eq!(evaled.len(), func.args.len());
-            let func_env_map = &mut env.borrow_mut().values;
-            for (name, val) in func.args.iter().zip(evaled.into_iter()) {
-                func_env_map.insert(name.clone(), val);
+            {
+                let func_env_map = &mut func_env.borrow_mut().values;
+                for (name, val) in func.args.iter().zip(evaled.into_iter()) {
+                    func_env_map.insert(name.clone(), val);
+                }
             }
-            eval(func_env, &func.body)
+            eval(globals, Some(func_env), &func.body)
         }
-        RuntimeVal::NativeFunc(func) => func(env, evaled),
+        RuntimeVal::NativeFunc(func) => func(globals, evaled),
         _ => panic!("first symbol of a list should refer to a function"),
     }
 }
@@ -46,25 +72,30 @@ fn eval_list(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
 struct NotSpecialForm;
 
 fn try_eval_special_form(
-    env: Environment,
+    globals: Env,
+    locals: Option<Env>,
     vals: &Vec<SExpr>,
 ) -> Result<RuntimeVal, NotSpecialForm> {
     match &vals[0] {
         SExpr::Symbol(symbol) => match symbol.as_ref() {
-            "def" => Ok(eval_define(env, vals)),
-            "begin" => Ok(eval_begin(env, vals)),
+            "def" => Ok(eval_define(globals, locals, vals)),
+            "begin" => Ok(eval_begin(globals, locals, vals)),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
     }
 }
 
-fn eval_define(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_define(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+    let mut create_env = match locals {
+        None => globals.clone(),
+        Some(ref val) => val.clone(),
+    };
     match &vals[..] {
         // variable define form
         [_, SExpr::Symbol(name), val] => {
-            let evaled = eval(env.clone(), val);
-            env.borrow_mut().values.insert(name.clone(), evaled);
+            let evaled = eval(globals.clone(), locals.clone(), val);
+            create_env.borrow_mut().values.insert(name.clone(), evaled);
             return RuntimeVal::nil();
         }
         // function define form
@@ -89,7 +120,10 @@ fn eval_define(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
                     SExpr::List(inner)
                 };
                 let function = RuntimeVal::function(name.clone(), args, body);
-                env.borrow_mut().values.insert(name.clone(), function);
+                create_env
+                    .borrow_mut()
+                    .values
+                    .insert(name.clone(), function);
                 return RuntimeVal::nil();
             } else {
                 panic!("wrong function define form");
@@ -100,10 +134,10 @@ fn eval_define(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
     panic!("not a define form");
 }
 
-fn eval_begin(env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_begin(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
     let mut res = RuntimeVal::nil();
     for expr in &vals[1..] {
-        res = eval(env.clone(), expr);
+        res = eval(globals.clone(), locals.clone(), expr);
     }
     res
 }

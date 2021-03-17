@@ -1,4 +1,4 @@
-use std::{collections::HashMap};
+use std::collections::HashMap;
 
 use crate::data::{Environment, RuntimeVal};
 use crate::utils::concatenate_vectors;
@@ -24,6 +24,7 @@ fn define_prelude_functions(map: &mut HashMap<String, RuntimeVal>) {
             print!("{}", arg.repr());
             print!(" ");
         }
+        print!("\n");
         RuntimeVal::nil()
     });
     def_func!(map, "repr", |_, args| {
@@ -32,7 +33,6 @@ fn define_prelude_functions(map: &mut HashMap<String, RuntimeVal>) {
     });
     def_func!(map, "+", plus);
 }
-
 
 fn plus(env: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
     assert!(args.len() > 1, "Cannot add less than 2 values");
@@ -45,7 +45,7 @@ fn plus(env: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
 }
 
 fn add_numbers(_: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
-    RuntimeVal::NumberVal(args.into_iter().fold(0.0, |acc, x | match x {
+    RuntimeVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {
         RuntimeVal::NumberVal(inner) => acc + inner,
         _ => panic!("Types mismatched"),
     }))
@@ -59,7 +59,7 @@ fn concatenate_strings(_: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
 }
 
 fn concatenate_lists(_: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
-    RuntimeVal::List(args.into_iter().fold(Vec::new(), |acc, x | match x {
+    RuntimeVal::List(args.into_iter().fold(Vec::new(), |acc, x| match x {
         RuntimeVal::List(inner) => concatenate_vectors(acc, inner),
         _ => panic!("Types mismatched"),
     }))
