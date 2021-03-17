@@ -1,7 +1,7 @@
 use core::panic;
 
 use crate::data::{Environment, RuntimeVal, SExpr};
-use crate::utils::print_sexpr;
+
 
 type Env = Environment;
 

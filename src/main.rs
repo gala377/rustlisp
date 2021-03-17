@@ -4,7 +4,7 @@ mod reader;
 mod stdlib;
 mod utils;
 
-use data::Environment;
+
 use reader::{read, ParseError};
 use utils::print_ast;
 

@@ -26,6 +26,7 @@ impl RuntimeFunc {
 pub enum RuntimeVal {
     NumberVal(f64),
     StringVal(String),
+    #[allow(dead_code)]
     Symbol(String),
     List(Vec<RuntimeVal>),
     Func(Rc<RuntimeFunc>),
@@ -90,6 +91,7 @@ impl Environment {
         Self::wrap(EnvironmentImpl::new())
     }
 
+    #[allow(dead_code)]
     pub fn with_parent(parent: Environment) -> Self {
         Self::wrap(EnvironmentImpl::with_parent(parent))
     }
