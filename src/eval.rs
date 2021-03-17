@@ -78,6 +78,8 @@ fn try_eval_special_form(
             "def" => Ok(eval_define(globals, locals, vals)),
             "begin" => Ok(eval_begin(globals, locals, vals)),
             "quote" => Ok(eval_quote(globals, locals, vals)),
+            "quasiquote" => Ok(eval_quasiquote(globals, locals, vals)),
+            "unquote" => panic!("Unquote in not quasiquoted context"),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
@@ -148,8 +150,34 @@ fn eval_quote(_: Env, _: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
 fn quote_expr(expr: &SExpr) -> RuntimeVal {
     match expr {
         SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
-        SExpr::List(inner) => RuntimeVal::List(inner.iter().map(|val| quote_expr(val)).collect()),
+        SExpr::List(inner) => RuntimeVal::List(inner.iter().map(quote_expr).collect()),
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
+    }
+}
+
+fn eval_quasiquote(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+    assert_eq!(vals.len(), 2, "you can only quote single expression");
+    quasiquote_expr(globals, locals, &vals[1])
+}
+
+fn quasiquote_expr(globals: Env, locals: Option<Env>, expr: &SExpr) -> RuntimeVal {
+    match expr {
+        SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
+        SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
+        SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
+        SExpr::List(inner) if inner.len() > 0 => {
+            if let SExpr::Symbol(val) = &inner[0] {
+                if val == "unquote" {
+                    assert_eq!(inner.len(), 2, "You can only unquote single expression");
+                    return eval(globals, locals, &inner[1]);
+                }
+            }
+            RuntimeVal::List(inner.iter().map(|val| quasiquote_expr(
+                globals.clone(),
+                locals.clone(),
+                val)).collect())
+        }
+        SExpr::List(_) => RuntimeVal::List(Vec::new()),
     }
 }

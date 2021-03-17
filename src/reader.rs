@@ -14,6 +14,8 @@ enum Token {
     RightBracket,
     Quote,
     SymbolQuote,
+    QuasiQuote,
+    Unquote,
 }
 
 impl From<&str> for Token {
@@ -24,6 +26,8 @@ impl From<&str> for Token {
             ")" => RightBracket,
             "\"" => Quote,
             "'" => SymbolQuote,
+            "`" => QuasiQuote,
+            "," => Unquote,
             other => Val(String::from(other)),
         }
     }
@@ -34,7 +38,9 @@ fn tokenize(source: &str) -> Vec<Token> {
         .replace('(', " ( ")
         .replace(')', " ) ")
         .replace('\"', " \" ")
-        .replace("'", " ' ")
+        .replace('\'', " ' ")
+        .replace('`', " ` ")
+        .replace(',', " , ")
         .split_whitespace()
         .map(Token::from)
         .collect()
@@ -69,6 +75,8 @@ where
             Token::Quote => parse_string(curr_atom),
             Token::Val(val) => parse_atom(val),
             Token::SymbolQuote => parse_quote(curr_atom),
+            Token::QuasiQuote => parse_quasiquote(curr_atom),
+            Token::Unquote => parse_unquote(curr_atom),
             _ => Err(ParseError::UnexpectedClosingParenthesis),
         }
     } else {
@@ -88,6 +96,8 @@ where
             Token::Quote => parse_string(curr_atom)?,
             Token::Val(val) => parse_atom(val)?,
             Token::SymbolQuote => parse_quote(curr_atom)?,
+            Token::Unquote => parse_unquote(curr_atom)?,
+            Token::QuasiQuote => parse_quasiquote(curr_atom)?,
         });
     }
     Err(ParseError::UnclosedList)
@@ -104,6 +114,8 @@ where
             Token::LeftBracket => res.push('('),
             Token::RightBracket => res.push(')'),
             Token::SymbolQuote => res.push('\''),
+            Token::QuasiQuote => res.push('`'),
+            Token::Unquote => res.push(','),
             Token::Quote => {
                 res.pop();
                 break;
@@ -120,6 +132,29 @@ where
 {
     Ok(SExpr::List(vec![
         SExpr::Symbol(String::from("quote")),
+        parse_expr(curr_atom)?,
+    ]))
+}
+
+
+
+fn parse_quasiquote<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
+where
+    It: Iterator<Item = Token>,
+{
+    Ok(SExpr::List(vec![
+        SExpr::Symbol(String::from("quasiquote")),
+        parse_expr(curr_atom)?,
+    ]))
+}
+
+
+fn parse_unquote<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
+where
+    It: Iterator<Item = Token>,
+{
+    Ok(SExpr::List(vec![
+        SExpr::Symbol(String::from("unquote")),
         parse_expr(curr_atom)?,
     ]))
 }
