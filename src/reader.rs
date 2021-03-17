@@ -116,7 +116,7 @@ where
 
 fn parse_quote<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
 where
-    It: Iterator<Item = Token>
+    It: Iterator<Item = Token>,
 {
     Ok(SExpr::Quote(Box::new(parse_expr(curr_atom)?)))
 }

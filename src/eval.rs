@@ -2,7 +2,6 @@ use core::panic;
 
 use crate::data::{Environment, RuntimeVal, SExpr};
 
-
 type Env = Environment;
 
 // There are no lambdas yet.
@@ -24,11 +23,9 @@ fn eval_quote(globals: Env, locals: Option<Env>, val: &SExpr) -> RuntimeVal {
     match val {
         SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
         SExpr::List(vals) => {
-            let res = vals.iter()
-                .map(|val| eval_quote(
-                    globals.clone(),
-                    locals.clone(),
-                    val))
+            let res = vals
+                .iter()
+                .map(|val| eval_quote(globals.clone(), locals.clone(), val))
                 .collect();
             RuntimeVal::List(res)
         }
