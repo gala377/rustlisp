@@ -52,6 +52,7 @@ fn try_eval_special_form(
     match &vals[0] {
         SExpr::Symbol(symbol) => match symbol.as_ref() {
             "def" => Ok(eval_define(env, vals)),
+            "begin" => Ok(eval_begin(env, vals)),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
@@ -59,12 +60,50 @@ fn try_eval_special_form(
 }
 
 fn eval_define(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
-    if let [_, SExpr::List(inner), val] = vals.as_slice() {
-        if let [SExpr::Symbol(name)] = inner.as_slice() {
+    match &vals[..] {
+        // variable define form
+        [_, SExpr::Symbol(name), val] => {
             let evaled = eval(env.clone(), val);
             env.borrow_mut().values.insert(name.clone(), evaled);
             return RuntimeVal::nil();
         }
+        // function define form
+        [_, SExpr::List(inner), body @ ..] => {
+            if let [SExpr::Symbol(name), args @ ..] = &inner[..] {
+                assert!(!body.is_empty(), "function body cannot be empty");
+                let args: Vec<String> = args
+                    .iter()
+                    .map(|x| {
+                        if let SExpr::Symbol(name) = x {
+                            name.clone()
+                        } else {
+                            panic!("function arguments should be symbols");
+                        }
+                    })
+                    .collect();
+                let body = if body.len() == 1 {
+                    body[0].clone()
+                } else {
+                    let mut inner = vec![SExpr::Symbol(String::from("begin"))];
+                    inner.extend(body.into_iter().map(Clone::clone));
+                    SExpr::List(inner)
+                };
+                let function = RuntimeVal::function(name.clone(), args, body);
+                env.borrow_mut().values.insert(name.clone(), function);
+                return RuntimeVal::nil();
+            } else {
+                panic!("wrong function define form");
+            }
+        }
+        _ => (),
     }
     panic!("not a define form");
+}
+
+fn eval_begin(env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
+    let mut res = RuntimeVal::nil();
+    for expr in &vals[1..] {
+        res = eval(env.clone(), expr);
+    }
+    res
 }

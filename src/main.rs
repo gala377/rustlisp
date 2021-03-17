@@ -11,7 +11,7 @@ const PROGRAM: &'static str = r#"
     (repr "hello world")
     (def (name) "Rafał")
     (repr "defined Rafał")
-    (print "hello" name)
+    (print "hello" (name) "new line pls")
     (repr "printed name")
 "#;
 

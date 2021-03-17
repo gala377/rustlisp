@@ -13,10 +13,7 @@ pub struct RuntimeFunc {
 }
 
 impl RuntimeFunc {
-    fn new<Impl>(name: String, args: Vec<String>, body: SExpr) -> Rc<RuntimeFunc>
-    where
-        Impl: 'static + Fn(Environment) -> RuntimeVal,
-    {
+    fn new(name: String, args: Vec<String>, body: SExpr) -> Rc<RuntimeFunc> {
         Rc::new(Self {
             name,
             args,
@@ -38,6 +35,10 @@ pub enum RuntimeVal {
 impl RuntimeVal {
     pub fn nil() -> RuntimeVal {
         RuntimeVal::List(Vec::new())
+    }
+
+    pub fn function(name: String, args: Vec<String>, body: SExpr) -> RuntimeVal {
+        Self::Func(RuntimeFunc::new(name, args, body))
     }
 
     pub fn native_function<Func>(func: Func) -> RuntimeVal
@@ -64,6 +65,7 @@ impl RuntimeVal {
     }
 }
 
+#[derive(Clone)]
 pub enum SExpr {
     LitNumber(f64),
     LitString(String),

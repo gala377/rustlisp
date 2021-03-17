@@ -26,3 +26,8 @@ pub fn print_sexpr_impl(expr: &SExpr, depth: usize) {
         }
     }
 }
+
+pub fn concatenate_vectors<T>(mut a: Vec<T>, mut b: Vec<T>) -> Vec<T> {
+    a.append(&mut b);
+    a
+}
