@@ -1,6 +1,25 @@
 use std::{collections::HashMap, rc::Rc};
 
-pub type RuntimeFunc = Rc<dyn Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal>;
+pub type NativeFunc = Rc<dyn Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal>;
+
+pub struct RuntimeFunc {
+    pub body: Box<SExpr>,
+    pub name: String,
+    pub args: Vec<String>,
+}
+
+impl RuntimeFunc {
+    fn new<Impl>(name: String, args: Vec<String>, body: SExpr) -> Rc<RuntimeFunc>
+    where
+        Impl: 'static + Fn(Rc<Environment>) -> RuntimeVal,
+    {
+        Rc::new(Self {
+            name,
+            args,
+            body: Box::new(body),
+        })
+    }
+}
 
 #[derive(Clone)]
 pub enum RuntimeVal {
@@ -8,7 +27,8 @@ pub enum RuntimeVal {
     StringVal(String),
     Symbol(String),
     List(Vec<RuntimeVal>),
-    Func(RuntimeFunc),
+    Func(Rc<RuntimeFunc>),
+    NativeFunc(NativeFunc),
 }
 
 impl RuntimeVal {
@@ -16,11 +36,11 @@ impl RuntimeVal {
         RuntimeVal::List(Vec::new())
     }
 
-    pub fn function<Func>(func: Func) -> RuntimeVal
+    pub fn native_function<Func>(func: Func) -> RuntimeVal
     where
         Func: 'static + Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal,
     {
-        RuntimeVal::Func(Rc::new(func))
+        RuntimeVal::NativeFunc(Rc::new(func))
     }
 
     pub fn repr(&self) -> String {
@@ -34,6 +54,7 @@ impl RuntimeVal {
                 res += ")";
                 res
             }
+            RuntimeVal::NativeFunc(_) => String::from("Native function object"),
             RuntimeVal::Func(_) => String::from("Function object"),
         }
     }

@@ -23,12 +23,19 @@ fn eval_list(env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
     }
     let mut evaled: Vec<RuntimeVal> = vals.iter().map(|expr| eval(env.clone(), expr)).collect();
     let func = evaled.remove(0);
-    if let RuntimeVal::Func(func) = func {
-        func(env, evaled)
-    } else {
-        panic!("first symbol of a list should refer to a function");
+    match func {
+        RuntimeVal::Func(func) => {
+            let mut func_env = Environment::with_parent(env.clone());
+            assert_eq!(evaled.len(), func.args.len());
+            let func_env_map = &mut Rc::get_mut(&mut func_env)
+                .expect("func_env was cloned before")
+                .values;
+            for (name, val) in func.args.iter().zip(evaled.into_iter()) {
+                func_env_map.insert(name.clone(), val);
+            }
+            eval(func_env, &func.body)
+        }
+        RuntimeVal::NativeFunc(func) => func(env, evaled),
+        _ => panic!("first symbol of a list should refer to a function"),
     }
-    // todo: how about you know, creating an environment for values passed
-    // as arguments? Its different for native functions as they do not
-    // have named arguments so for them vector is fine.
 }

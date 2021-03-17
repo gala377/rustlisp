@@ -4,10 +4,10 @@ use crate::data::{Environment, RuntimeVal};
 
 macro_rules! def_func {
     ($map:ident, $name:expr, $lambda:expr) => {
-        $map.insert($name.into(), RuntimeVal::function($lambda));
+        $map.insert($name.into(), RuntimeVal::native_function($lambda));
     };
     ($map:ident, $name:expr, $func:path) => {
-        $map.insert($name.into(), RuntimeVal::function($lambda));
+        $map.insert($name.into(), RuntimeVal::native_function($lambda));
     };
 }
 
