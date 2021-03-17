@@ -1,40 +1,52 @@
 use std::collections::HashMap;
 
-use crate::data::{Environment, RuntimeVal};
+use crate::data::{Environment, RuntimeVal, SymbolId, SymbolTable, SymbolTableBuilder};
 use crate::utils::concatenate_vectors;
 
 macro_rules! def_func {
-    ($map:ident, $name:expr, $lambda:expr) => {
-        $map.insert($name.into(), RuntimeVal::native_function($lambda));
+    ($map:ident, $symbols:ident, $name:expr, $lambda:expr) => {
+        let id = $symbols.put_symbol($name.into());
+        $map.insert(id, RuntimeVal::native_function($lambda));
     };
-    ($map:ident, $name:expr, $func:path) => {
-        $map.insert($name.into(), RuntimeVal::native_function($lambda));
+    ($map:ident, $symbols:ident, $name:expr, $func:path) => {
+        let id = $symbols.put_symbol($name.into());
+        $map.insert(id, RuntimeVal::native_function($lambda));
     };
 }
 
-pub fn std_env() -> Environment {
+pub fn std_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
     let mut env = Environment::new();
-    define_prelude_functions(&mut env.borrow_mut().values);
+    define_prelude_functions(&mut env.borrow_mut().values, symbol_table);
     env
 }
 
-fn define_prelude_functions(map: &mut HashMap<String, RuntimeVal>) {
-    def_func!(map, "print", |_, args| {
+fn define_prelude_functions(
+    map: &mut HashMap<SymbolId, RuntimeVal>,
+    symbol_table: &mut SymbolTableBuilder,
+) {
+    def_func!(map, symbol_table, "print", |_, sym, args| {
         for arg in args.into_iter() {
-            print!("{}", arg.repr());
+            print!("{}", arg.repr(sym));
             print!(" ");
         }
         print!("\n");
         RuntimeVal::nil()
     });
-    def_func!(map, "repr", |_, args| {
+    def_func!(map, symbol_table, "repr", |_, sym, args| {
         assert!(args.len() == 1);
-        RuntimeVal::StringVal(args[0].repr())
+        RuntimeVal::StringVal(args[0].repr(sym))
     });
-    def_func!(map, "+", plus);
+    def_func!(map, symbol_table, "+", plus);
+    def_func!(map, symbol_table, "list", |_, _, args| RuntimeVal::List(
+        args
+    ));
+    def_func!(map, symbol_table, "str", |_, syms, args| {
+        assert!(args.len() == 1, "function str accepts only one parameter");
+        RuntimeVal::StringVal(args[0].str(syms))
+    });
 }
 
-fn plus(env: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
+fn plus(env: Environment, _: &SymbolTable, args: Vec<RuntimeVal>) -> RuntimeVal {
     assert!(args.len() > 1, "Cannot add less than 2 values");
     match &args[0] {
         RuntimeVal::List(_) => concatenate_lists(env, args),

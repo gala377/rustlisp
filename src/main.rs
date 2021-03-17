@@ -4,7 +4,7 @@ mod reader;
 mod stdlib;
 mod utils;
 
-use reader::{read, ParseError};
+use reader::{read, ParseError, AST};
 use utils::print_ast;
 
 const PROGRAM: &'static str = r#"
@@ -44,13 +44,17 @@ const PROGRAM: &'static str = r#"
 "#;
 
 fn main() -> Result<(), ParseError> {
-    let ast = read(PROGRAM)?;
-    print_ast(&ast);
+    let AST {
+        program,
+        mut symbol_table,
+    } = read(PROGRAM)?;
+    print_ast(&program);
     print!("\n\n\n");
-    let env = stdlib::std_env();
-    for expr in &ast {
-        let val = eval::eval(env.clone(), None, expr);
-        println!("Evaled to value: {}", val.repr());
+    let env = stdlib::std_env(&mut symbol_table);
+    let symbol_table = symbol_table.build();
+    for expr in &program {
+        let val = eval::eval(env.clone(), None, &symbol_table, expr);
+        println!("Evaled to value: {}", val.repr(&symbol_table));
     }
     Ok(())
 }

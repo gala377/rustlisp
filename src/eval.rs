@@ -1,4 +1,6 @@
-use crate::data::{Environment, RuntimeVal, SExpr};
+use std::convert::TryInto;
+
+use crate::data::{BuiltinSymbols, Environment, RuntimeVal, SExpr, SymbolId, SymbolTable};
 
 type Env = Environment;
 
@@ -7,19 +9,23 @@ type Env = Environment;
 // When  we call a function we should only create a new env with global env as a parent
 //
 
-pub fn eval(globals: Env, locals: Option<Env>, expr: &SExpr) -> RuntimeVal {
+pub fn eval(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: &SExpr) -> RuntimeVal {
     match expr {
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
-        SExpr::Symbol(val) => eval_symbol(globals, locals, val),
-        SExpr::List(val) => eval_list(globals, locals, val),
+        SExpr::Symbol(val) => eval_symbol(globals, locals, *val),
+        SExpr::List(val) => eval_list(globals, locals, symbols, val),
     }
 }
 
-fn eval_symbol(globals: Env, locals: Option<Env>, expr: &String) -> RuntimeVal {
+fn eval_symbol(
+    globals: Env,
+    locals: Option<Env>,
+    expr: SymbolId,
+) -> RuntimeVal {
     if let Some(mut env) = locals {
         loop {
-            if let Some(val) = env.borrow().values.get(expr) {
+            if let Some(val) = env.borrow().values.get(&expr) {
                 return val.clone();
             }
             if let Some(val) = env.into_parent() {
@@ -32,21 +38,26 @@ fn eval_symbol(globals: Env, locals: Option<Env>, expr: &String) -> RuntimeVal {
     globals
         .borrow()
         .values
-        .get(expr)
+        .get(&expr)
         .expect(&format!("symbol {} not defined", expr))
         .clone()
 }
 
-fn eval_list(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_list(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &SymbolTable,
+    vals: &Vec<SExpr>,
+) -> RuntimeVal {
     if vals.is_empty() {
         return RuntimeVal::nil();
     }
-    if let Ok(val) = try_eval_special_form(globals.clone(), locals.clone(), vals) {
+    if let Ok(val) = try_eval_special_form(globals.clone(), locals.clone(), symbols, vals) {
         return val;
     }
     let mut evaled: Vec<RuntimeVal> = vals
         .iter()
-        .map(|expr| eval(globals.clone(), locals.clone(), expr))
+        .map(|expr| eval(globals.clone(), locals.clone(), symbols, expr))
         .collect();
     let func = evaled.remove(0);
     match func {
@@ -59,9 +70,9 @@ fn eval_list(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal
                     func_env_map.insert(name.clone(), val);
                 }
             }
-            eval(globals, Some(func_env), &func.body)
+            eval(globals, Some(func_env), symbols, &func.body)
         }
-        RuntimeVal::NativeFunc(func) => func(globals, evaled),
+        RuntimeVal::NativeFunc(func) => func(globals, symbols, evaled),
         _ => panic!("first symbol of a list should refer to a function"),
     }
 }
@@ -71,22 +82,28 @@ struct NotSpecialForm;
 fn try_eval_special_form(
     globals: Env,
     locals: Option<Env>,
+    symbols: &SymbolTable,
     vals: &Vec<SExpr>,
 ) -> Result<RuntimeVal, NotSpecialForm> {
     match &vals[0] {
-        SExpr::Symbol(symbol) => match symbol.as_ref() {
-            "def" => Ok(eval_define(globals, locals, vals)),
-            "begin" => Ok(eval_begin(globals, locals, vals)),
-            "quote" => Ok(eval_quote(globals, locals, vals)),
-            "quasiquote" => Ok(eval_quasiquote(globals, locals, vals)),
-            "unquote" => panic!("Unquote in not quasiquoted context"),
+        SExpr::Symbol(symbol) => match (*symbol).try_into() {
+            Ok(BuiltinSymbols::Define) => Ok(eval_define(globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Begin) => Ok(eval_begin(globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Quote) => Ok(eval_quote(globals, locals, vals)),
+            Ok(BuiltinSymbols::Quasiquote) => Ok(eval_quasiquote(globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Unquote) => panic!("Unquote in not quasiquoted context"),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
     }
 }
 
-fn eval_define(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_define(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &SymbolTable,
+    vals: &Vec<SExpr>,
+) -> RuntimeVal {
     let mut create_env = match locals {
         None => globals.clone(),
         Some(ref val) => val.clone(),
@@ -94,7 +111,7 @@ fn eval_define(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeV
     match &vals[..] {
         // variable define form
         [_, SExpr::Symbol(name), val] => {
-            let evaled = eval(globals.clone(), locals.clone(), val);
+            let evaled = eval(globals.clone(), locals.clone(), symbols, val);
             create_env.borrow_mut().values.insert(name.clone(), evaled);
             return RuntimeVal::nil();
         }
@@ -102,7 +119,7 @@ fn eval_define(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeV
         [_, SExpr::List(inner), body @ ..] => {
             if let [SExpr::Symbol(name), args @ ..] = &inner[..] {
                 assert!(!body.is_empty(), "function body cannot be empty");
-                let args: Vec<String> = args
+                let args: Vec<SymbolId> = args
                     .iter()
                     .map(|x| {
                         if let SExpr::Symbol(name) = x {
@@ -115,7 +132,7 @@ fn eval_define(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeV
                 let body = if body.len() == 1 {
                     body[0].clone()
                 } else {
-                    let mut inner = vec![SExpr::Symbol(String::from("begin"))];
+                    let mut inner = vec![SExpr::Symbol(BuiltinSymbols::Begin as SymbolId)];
                     inner.extend(body.into_iter().map(Clone::clone));
                     SExpr::List(inner)
                 };
@@ -134,10 +151,15 @@ fn eval_define(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeV
     panic!("not a define form");
 }
 
-fn eval_begin(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_begin(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &SymbolTable,
+    vals: &Vec<SExpr>,
+) -> RuntimeVal {
     let mut res = RuntimeVal::nil();
     for expr in &vals[1..] {
-        res = eval(globals.clone(), locals.clone(), expr);
+        res = eval(globals.clone(), locals.clone(), symbols, expr);
     }
     res
 }
@@ -156,27 +178,39 @@ fn quote_expr(expr: &SExpr) -> RuntimeVal {
     }
 }
 
-fn eval_quasiquote(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_quasiquote(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &SymbolTable,
+    vals: &Vec<SExpr>,
+) -> RuntimeVal {
     assert_eq!(vals.len(), 2, "you can only quote single expression");
-    quasiquote_expr(globals, locals, &vals[1])
+    quasiquote_expr(globals, locals, symbols, &vals[1])
 }
 
-fn quasiquote_expr(globals: Env, locals: Option<Env>, expr: &SExpr) -> RuntimeVal {
+fn quasiquote_expr(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &SymbolTable,
+    expr: &SExpr,
+) -> RuntimeVal {
     match expr {
         SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
         SExpr::List(inner) if inner.len() > 0 => {
             if let SExpr::Symbol(val) = &inner[0] {
-                if val == "unquote" {
+                if *val == BuiltinSymbols::Unquote as SymbolId {
                     assert_eq!(inner.len(), 2, "You can only unquote single expression");
-                    return eval(globals, locals, &inner[1]);
+                    return eval(globals, locals, symbols, &inner[1]);
                 }
             }
-            RuntimeVal::List(inner.iter().map(|val| quasiquote_expr(
-                globals.clone(),
-                locals.clone(),
-                val)).collect())
+            RuntimeVal::List(
+                inner
+                    .iter()
+                    .map(|val| quasiquote_expr(globals.clone(), locals.clone(), symbols, val))
+                    .collect(),
+            )
         }
         SExpr::List(_) => RuntimeVal::List(Vec::new()),
     }

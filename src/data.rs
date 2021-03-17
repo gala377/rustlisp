@@ -1,19 +1,20 @@
 use std::{
     cell::{Ref, RefCell, RefMut},
     collections::HashMap,
+    convert::TryFrom,
     rc::Rc,
 };
 
-pub type NativeFunc = Rc<dyn Fn(Environment, Vec<RuntimeVal>) -> RuntimeVal>;
+pub type NativeFunc = Rc<dyn Fn(Environment, &SymbolTable, Vec<RuntimeVal>) -> RuntimeVal>;
 
 pub struct RuntimeFunc {
     pub body: Box<SExpr>,
-    pub name: String,
-    pub args: Vec<String>,
+    pub name: SymbolId,
+    pub args: Vec<SymbolId>,
 }
 
 impl RuntimeFunc {
-    fn new(name: String, args: Vec<String>, body: SExpr) -> Rc<RuntimeFunc> {
+    fn new(name: SymbolId, args: Vec<SymbolId>, body: SExpr) -> Rc<RuntimeFunc> {
         Rc::new(Self {
             name,
             args,
@@ -26,7 +27,7 @@ impl RuntimeFunc {
 pub enum RuntimeVal {
     NumberVal(f64),
     StringVal(String),
-    Symbol(String),
+    Symbol(SymbolId),
     List(Vec<RuntimeVal>),
     Func(Rc<RuntimeFunc>),
     NativeFunc(NativeFunc),
@@ -37,33 +38,45 @@ impl RuntimeVal {
         RuntimeVal::List(Vec::new())
     }
 
-    pub fn function(name: String, args: Vec<String>, body: SExpr) -> RuntimeVal {
+    pub fn function(name: SymbolId, args: Vec<SymbolId>, body: SExpr) -> RuntimeVal {
         Self::Func(RuntimeFunc::new(name, args, body))
     }
 
     pub fn native_function<Func>(func: Func) -> RuntimeVal
     where
-        Func: 'static + Fn(Environment, Vec<RuntimeVal>) -> RuntimeVal,
+        Func: 'static + Fn(Environment, &SymbolTable, Vec<RuntimeVal>) -> RuntimeVal,
     {
         RuntimeVal::NativeFunc(Rc::new(func))
     }
 
-    pub fn repr(&self) -> String {
+    pub fn repr(&self, symbol_table: &SymbolTable) -> String {
+        use RuntimeVal::*;
         match self {
-            RuntimeVal::NumberVal(val) => val.to_string(),
-            RuntimeVal::StringVal(val) => format!(r#""{}""#, val),
-            RuntimeVal::Symbol(val) => val.clone(),
-            RuntimeVal::List(vals) => {
+            NumberVal(val) => val.to_string(),
+            StringVal(val) => format!(r#""{}""#, val),
+            Symbol(val) => symbol_table[*val].clone(),
+            List(vals) => {
                 let mut res = String::from("(");
                 vals.iter().for_each(|val| {
-                    res += &val.repr();
+                    res += &val.repr(symbol_table);
                     res += " ";
                 });
                 res += ")";
                 res
             }
-            RuntimeVal::NativeFunc(_) => String::from("Native function object"),
-            RuntimeVal::Func(_) => String::from("Function object"),
+            NativeFunc(_) => String::from("Native function object"),
+            Func(_) => String::from("Function object"),
+        }
+    }
+
+    pub fn str(&self, symbol_table: &SymbolTable) -> String {
+        use RuntimeVal::*;
+        match self {
+            NumberVal(val) => val.to_string(),
+            StringVal(val) => val.clone(),
+            Symbol(val) => symbol_table[*val].clone(),
+            list @ List(_) => list.repr(symbol_table),
+            _ => panic!("No str representation"),
         }
     }
 }
@@ -72,13 +85,13 @@ impl RuntimeVal {
 pub enum SExpr {
     LitNumber(f64),
     LitString(String),
-    Symbol(String),
+    Symbol(SymbolId),
     List(Vec<SExpr>),
 }
 
 pub struct EnvironmentImpl {
     pub parent: Option<Environment>,
-    pub values: HashMap<String, RuntimeVal>,
+    pub values: HashMap<SymbolId, RuntimeVal>,
 }
 
 #[derive(Clone)]
@@ -123,6 +136,78 @@ impl EnvironmentImpl {
         Self {
             parent: Some(parent),
             values: HashMap::new(),
+        }
+    }
+}
+
+pub type SymbolId = usize;
+pub type SymbolTable = Vec<String>;
+
+pub struct SymbolTableBuilder {
+    symbols: HashMap<String, SymbolId>,
+    symbol_table: SymbolTable,
+}
+
+pub enum BuiltinSymbols {
+    Define,
+    Quote,
+    Unquote,
+    Quasiquote,
+    Begin,
+}
+
+impl TryFrom<SymbolId> for BuiltinSymbols {
+    type Error = &'static str;
+
+    fn try_from(value: SymbolId) -> Result<Self, Self::Error> {
+        use BuiltinSymbols::*;
+        match value {
+            0 => Ok(Define),
+            1 => Ok(Quote),
+            2 => Ok(Unquote),
+            3 => Ok(Quasiquote),
+            4 => Ok(Begin),
+            _ => Err("out of range"),
+        }
+    }
+}
+
+impl SymbolTableBuilder {
+    pub fn builtin() -> Self {
+        let mut table = HashMap::new();
+        table.insert(String::from("def"), BuiltinSymbols::Define as usize);
+        table.insert(String::from("quote"), BuiltinSymbols::Quote as usize);
+        table.insert(String::from("unquote"), BuiltinSymbols::Unquote as usize);
+        table.insert(
+            String::from("quasiquote"),
+            BuiltinSymbols::Quasiquote as usize,
+        );
+        table.insert(String::from("begin"), BuiltinSymbols::Begin as usize);
+        let symbol_table = vec![
+            String::from("def"),
+            String::from("quote"),
+            String::from("unquote"),
+            String::from("quasiquote"),
+            String::from("begin"),
+        ];
+        Self {
+            symbols: table,
+            symbol_table,
+        }
+    }
+
+    pub fn build(self) -> SymbolTable {
+        self.symbol_table
+    }
+
+    pub fn put_symbol(&mut self, val: String) -> SymbolId {
+        match self.symbols.get(&val) {
+            Some(id) => *id,
+            None => {
+                self.symbol_table.push(val.clone());
+                self.symbols.insert(val, self.symbol_table.len() - 1);
+                self.symbol_table.len() - 1
+            }
         }
     }
 }
