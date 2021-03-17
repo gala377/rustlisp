@@ -1,8 +1,6 @@
 use core::panic;
-use std::{iter::Enumerate, rc::Rc};
 
-use crate::data::{Environment, RuntimeVal};
-use crate::data::{EnvironmentImpl, SExpr};
+use crate::data::{Environment, RuntimeVal, SExpr};
 
 pub fn eval(env: Environment, expr: &SExpr) -> RuntimeVal {
     match expr {
