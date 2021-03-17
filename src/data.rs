@@ -1,7 +1,5 @@
 use std::{collections::HashMap, rc::Rc};
 
-
-
 pub type RuntimeFunc = Rc<dyn Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal>;
 
 #[derive(Clone)]
@@ -13,15 +11,14 @@ pub enum RuntimeVal {
     Func(RuntimeFunc),
 }
 
-
 impl RuntimeVal {
-
     pub fn nil() -> RuntimeVal {
         RuntimeVal::List(Vec::new())
     }
 
     pub fn function<Func>(func: Func) -> RuntimeVal
-    where Func: 'static + Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal
+    where
+        Func: 'static + Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal,
     {
         RuntimeVal::Func(Rc::new(func))
     }
@@ -41,7 +38,6 @@ impl RuntimeVal {
         }
     }
 }
-
 
 pub enum SExpr {
     LitNumber(f64),
@@ -70,4 +66,3 @@ impl Environment {
         })
     }
 }
-

@@ -1,7 +1,6 @@
-use std::{borrow::BorrowMut, collections::HashMap, rc::Rc};
+use std::rc::Rc;
 
-use crate::data::{Environment, RuntimeVal, SExpr};
-
+use crate::data::{Environment, RuntimeVal};
 
 macro_rules! def_func {
     ($map:ident, $name:expr, $lambda:expr) => {
@@ -9,7 +8,7 @@ macro_rules! def_func {
     };
     ($map:ident, $name:expr, $func:path) => {
         $map.insert($name.into(), RuntimeVal::function($lambda));
-    }
+    };
 }
 
 pub fn std_env() -> Rc<Environment> {

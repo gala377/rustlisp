@@ -1,7 +1,7 @@
 use std::rc::Rc;
 
-use crate::data::{Environment, SExpr};
 use crate::data::RuntimeVal;
+use crate::data::{Environment, SExpr};
 
 pub fn eval(env: Rc<Environment>, expr: &SExpr) -> RuntimeVal {
     match expr {
@@ -15,7 +15,6 @@ pub fn eval(env: Rc<Environment>, expr: &SExpr) -> RuntimeVal {
 fn eval_symbol(env: Rc<Environment>, expr: &String) -> RuntimeVal {
     let val = env.values.get(expr).expect("symbol not defined");
     (*val).clone()
-
 }
 
 fn eval_list(env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
