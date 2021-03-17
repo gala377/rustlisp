@@ -1,4 +1,4 @@
-use std::{collections::HashMap, ops::Add};
+use std::{collections::HashMap};
 
 use crate::data::{Environment, RuntimeVal};
 use crate::utils::concatenate_vectors;
