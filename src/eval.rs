@@ -1,4 +1,5 @@
-use std::rc::Rc;
+use core::panic;
+use std::{iter::Enumerate, rc::Rc};
 
 use crate::data::RuntimeVal;
 use crate::data::{Environment, SExpr};
@@ -17,9 +18,13 @@ fn eval_symbol(env: Rc<Environment>, expr: &String) -> RuntimeVal {
     (*val).clone()
 }
 
-fn eval_list(env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_list(mut env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
     if vals.is_empty() {
         return RuntimeVal::nil();
+    }
+    match try_eval_special_form(env, vals) {
+        TryEvalRes::NotEvaluated(restored_env) => env = restored_env,
+        TryEvalRes::Evaluated(val) => return val,
     }
     let mut evaled: Vec<RuntimeVal> = vals.iter().map(|expr| eval(env.clone(), expr)).collect();
     let func = evaled.remove(0);
@@ -38,4 +43,33 @@ fn eval_list(env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
         RuntimeVal::NativeFunc(func) => func(env, evaled),
         _ => panic!("first symbol of a list should refer to a function"),
     }
+}
+
+enum TryEvalRes {
+    NotEvaluated(Rc<Environment>),
+    Evaluated(RuntimeVal),
+}
+
+fn try_eval_special_form(env: Rc<Environment>, vals: &Vec<SExpr>) -> TryEvalRes {
+    match &vals[0] {
+        SExpr::Symbol(symbol) => match symbol.as_ref() {
+            "def" => TryEvalRes::Evaluated(eval_define(env, vals)),
+            _ => TryEvalRes::NotEvaluated(env),
+        },
+        _ => TryEvalRes::NotEvaluated(env),
+    }
+}
+
+fn eval_define(mut env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
+    if let [_, SExpr::List(inner), val] = vals.as_slice() {
+        if let [SExpr::Symbol(name)] = inner.as_slice() {
+            let evaled = eval(env.clone(), val);
+            Rc::get_mut(&mut env)
+                .expect("yeah this won't work")
+                .values
+                .insert(name.clone(), evaled);
+            return RuntimeVal::nil();
+        }
+    }
+    panic!("not a define form");
 }
