@@ -26,7 +26,6 @@ impl RuntimeFunc {
 pub enum RuntimeVal {
     NumberVal(f64),
     StringVal(String),
-    #[allow(dead_code)]
     Symbol(String),
     List(Vec<RuntimeVal>),
     Func(Rc<RuntimeFunc>),
@@ -75,7 +74,6 @@ pub enum SExpr {
     LitString(String),
     Symbol(String),
     List(Vec<SExpr>),
-    Quote(Box<SExpr>),
 }
 
 pub struct EnvironmentImpl {

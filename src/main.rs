@@ -24,7 +24,22 @@ const PROGRAM: &'static str = r#"
     (def (times x) (+ x x))
     (def (apply func arg) (func arg))
     (apply times 10)
-
+    (def _ (begin 
+        (print 1)
+        (print 2)
+        (print 3)
+        1
+        "hello"
+        "thats the result"
+    ))
+    (def (myfunc)
+        (print "begin")
+        10
+        (print "end")
+        "function ended")
+    (print _)
+    (myfunc)
+    (quote (myfunc print (my smth) 1))
 "#;
 
 fn main() -> Result<(), ParseError> {

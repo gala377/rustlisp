@@ -1,5 +1,3 @@
-use core::panic;
-
 use crate::data::{Environment, RuntimeVal, SExpr};
 
 type Env = Environment;
@@ -15,21 +13,6 @@ pub fn eval(globals: Env, locals: Option<Env>, expr: &SExpr) -> RuntimeVal {
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
         SExpr::Symbol(val) => eval_symbol(globals, locals, val),
         SExpr::List(val) => eval_list(globals, locals, val),
-        SExpr::Quote(val) => eval_quote(globals, locals, val),
-    }
-}
-
-fn eval_quote(globals: Env, locals: Option<Env>, val: &SExpr) -> RuntimeVal {
-    match val {
-        SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
-        SExpr::List(vals) => {
-            let res = vals
-                .iter()
-                .map(|val| eval_quote(globals.clone(), locals.clone(), val))
-                .collect();
-            RuntimeVal::List(res)
-        }
-        _ => eval(globals, locals, val),
     }
 }
 
@@ -94,6 +77,7 @@ fn try_eval_special_form(
         SExpr::Symbol(symbol) => match symbol.as_ref() {
             "def" => Ok(eval_define(globals, locals, vals)),
             "begin" => Ok(eval_begin(globals, locals, vals)),
+            "quote" => Ok(eval_quote(globals, locals, vals)),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
@@ -154,4 +138,18 @@ fn eval_begin(globals: Env, locals: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVa
         res = eval(globals.clone(), locals.clone(), expr);
     }
     res
+}
+
+fn eval_quote(_: Env, _: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+    assert_eq!(vals.len(), 2, "you can only quote single expression");
+    quote_expr(&vals[1])
+}
+
+fn quote_expr(expr: &SExpr) -> RuntimeVal {
+    match expr {
+        SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
+        SExpr::List(inner) => RuntimeVal::List(inner.iter().map(|val| quote_expr(val)).collect()),
+        SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
+        SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
+    }
 }

@@ -118,7 +118,10 @@ fn parse_quote<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
 where
     It: Iterator<Item = Token>,
 {
-    Ok(SExpr::Quote(Box::new(parse_expr(curr_atom)?)))
+    Ok(SExpr::List(vec![
+        SExpr::Symbol(String::from("quote")),
+        parse_expr(curr_atom)?,
+    ]))
 }
 
 fn parse_atom(curr_atom: String) -> Result<SExpr, ParseError> {
