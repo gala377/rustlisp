@@ -19,6 +19,13 @@ const PROGRAM: &'static str = r#"
     (def (id x) x)
     (print (id Ania))
     (print (greeting "Dupa"))
+    (print '(greeting (id 1) (id x) (smth smth) 1 2 3))
+    
+    (repr "hej")
+    (def (times x) (+ x x))
+    (def (apply func arg) (func arg))
+    (apply times 10)
+
 "#;
 
 fn main() -> Result<(), ParseError> {

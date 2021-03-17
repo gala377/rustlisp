@@ -16,6 +16,10 @@ pub fn print_sexpr_impl(expr: &SExpr, depth: usize) {
         SExpr::LitNumber(val) => print!("{}", val),
         SExpr::LitString(val) => print!(r#""{}""#, val),
         SExpr::Symbol(val) => print!("{}", val),
+        SExpr::Quote(val) => {
+            print!("'");
+            print_sexpr_impl(val, depth)
+        }
         SExpr::List(val) => {
             print!("\n{}(", " ".repeat(depth * 2));
             val.iter().for_each(|val| {

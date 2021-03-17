@@ -16,6 +16,23 @@ pub fn eval(globals: Env, locals: Option<Env>, expr: &SExpr) -> RuntimeVal {
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
         SExpr::Symbol(val) => eval_symbol(globals, locals, val),
         SExpr::List(val) => eval_list(globals, locals, val),
+        SExpr::Quote(val) => eval_quote(globals, locals, val),
+    }
+}
+
+fn eval_quote(globals: Env, locals: Option<Env>, val: &SExpr) -> RuntimeVal {
+    match val {
+        SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
+        SExpr::List(vals) => {
+            let res = vals.iter()
+                .map(|val| eval_quote(
+                    globals.clone(),
+                    locals.clone(),
+                    val))
+                .collect();
+            RuntimeVal::List(res)
+        }
+        _ => eval(globals, locals, val),
     }
 }
 

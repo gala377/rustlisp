@@ -4,6 +4,8 @@ use crate::data::SExpr;
 pub enum ParseError {
     UnexpectedAtom,
     UnclosedList,
+    UnexpectedClosingParenthesis,
+    UnexpectedEOF,
 }
 
 enum Token {
@@ -11,6 +13,7 @@ enum Token {
     LeftBracket,
     RightBracket,
     Quote,
+    SymbolQuote,
 }
 
 impl From<&str> for Token {
@@ -20,6 +23,7 @@ impl From<&str> for Token {
             "(" => LeftBracket,
             ")" => RightBracket,
             "\"" => Quote,
+            "'" => SymbolQuote,
             other => Val(String::from(other)),
         }
     }
@@ -30,6 +34,7 @@ fn tokenize(source: &str) -> Vec<Token> {
         .replace('(', " ( ")
         .replace(')', " ) ")
         .replace('\"', " \" ")
+        .replace("'", " ' ")
         .split_whitespace()
         .map(Token::from)
         .collect()
@@ -54,6 +59,23 @@ where
     Ok(prog)
 }
 
+fn parse_expr<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
+where
+    It: Iterator<Item = Token>,
+{
+    if let Some(atom) = curr_atom.next() {
+        match atom {
+            Token::LeftBracket => parse_list(curr_atom),
+            Token::Quote => parse_string(curr_atom),
+            Token::Val(val) => parse_atom(val),
+            Token::SymbolQuote => parse_quote(curr_atom),
+            _ => Err(ParseError::UnexpectedClosingParenthesis),
+        }
+    } else {
+        Err(ParseError::UnexpectedEOF)
+    }
+}
+
 fn parse_list<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
 where
     It: Iterator<Item = Token>,
@@ -65,6 +87,7 @@ where
             Token::LeftBracket => parse_list(curr_atom)?,
             Token::Quote => parse_string(curr_atom)?,
             Token::Val(val) => parse_atom(val)?,
+            Token::SymbolQuote => parse_quote(curr_atom)?,
         });
     }
     Err(ParseError::UnclosedList)
@@ -80,6 +103,7 @@ where
             Token::Val(val) => res.push_str(&val),
             Token::LeftBracket => res.push('('),
             Token::RightBracket => res.push(')'),
+            Token::SymbolQuote => res.push('\''),
             Token::Quote => {
                 res.pop();
                 break;
@@ -88,6 +112,13 @@ where
         res.push(' ');
     }
     Ok(SExpr::LitString(res))
+}
+
+fn parse_quote<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
+where
+    It: Iterator<Item = Token>
+{
+    Ok(SExpr::Quote(Box::new(parse_expr(curr_atom)?)))
 }
 
 fn parse_atom(curr_atom: String) -> Result<SExpr, ParseError> {

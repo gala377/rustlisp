@@ -56,7 +56,10 @@ impl RuntimeVal {
             RuntimeVal::Symbol(val) => val.clone(),
             RuntimeVal::List(vals) => {
                 let mut res = String::from("(");
-                vals.iter().for_each(|val| res += &val.repr());
+                vals.iter().for_each(|val| {
+                    res += &val.repr();
+                    res += " ";
+                });
                 res += ")";
                 res
             }
@@ -72,6 +75,7 @@ pub enum SExpr {
     LitString(String),
     Symbol(String),
     List(Vec<SExpr>),
+    Quote(Box<SExpr>),
 }
 
 pub struct EnvironmentImpl {
