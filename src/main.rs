@@ -39,7 +39,8 @@ const PROGRAM: &'static str = r#"
         "function ended")
     (print _)
     (myfunc)
-    (quote (myfunc print (my smth) 1))
+    (quote ,(`myfunc print (my smth) 1))
+    (print `(,(id 1) ,(id 2) (id (id 3))))
 "#;
 
 fn main() -> Result<(), ParseError> {
