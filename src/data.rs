@@ -1,6 +1,11 @@
-use std::{collections::HashMap, rc::Rc};
+use std::{
+    cell::{Ref, RefCell, RefMut},
+    collections::HashMap,
+    ops::Deref,
+    rc::Rc,
+};
 
-pub type NativeFunc = Rc<dyn Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal>;
+pub type NativeFunc = Rc<dyn Fn(Environment, Vec<RuntimeVal>) -> RuntimeVal>;
 
 pub struct RuntimeFunc {
     pub body: Box<SExpr>,
@@ -11,7 +16,7 @@ pub struct RuntimeFunc {
 impl RuntimeFunc {
     fn new<Impl>(name: String, args: Vec<String>, body: SExpr) -> Rc<RuntimeFunc>
     where
-        Impl: 'static + Fn(Rc<Environment>) -> RuntimeVal,
+        Impl: 'static + Fn(Environment) -> RuntimeVal,
     {
         Rc::new(Self {
             name,
@@ -38,7 +43,7 @@ impl RuntimeVal {
 
     pub fn native_function<Func>(func: Func) -> RuntimeVal
     where
-        Func: 'static + Fn(Rc<Environment>, Vec<RuntimeVal>) -> RuntimeVal,
+        Func: 'static + Fn(Environment, Vec<RuntimeVal>) -> RuntimeVal,
     {
         RuntimeVal::NativeFunc(Rc::new(func))
     }
@@ -67,23 +72,48 @@ pub enum SExpr {
     List(Vec<SExpr>),
 }
 
-pub struct Environment {
-    pub parent: Option<Rc<Environment>>,
+pub struct EnvironmentImpl {
+    pub parent: Option<Environment>,
     pub values: HashMap<String, RuntimeVal>,
 }
 
+#[derive(Clone)]
+pub struct Environment(Rc<RefCell<EnvironmentImpl>>);
+
 impl Environment {
-    pub fn new() -> Rc<Environment> {
-        Rc::new(Self {
-            parent: None,
-            values: HashMap::new(),
-        })
+    pub fn wrap(inner: EnvironmentImpl) -> Self {
+        Self(Rc::new(RefCell::new(inner)))
     }
 
-    pub fn with_parent(parent: Rc<Environment>) -> Rc<Environment> {
-        Rc::new(Self {
+    pub fn new() -> Self {
+        Self::wrap(EnvironmentImpl::new())
+    }
+
+    pub fn with_parent(parent: Environment) -> Self {
+        Self::wrap(EnvironmentImpl::with_parent(parent))
+    }
+
+    pub fn borrow(&self) -> Ref<EnvironmentImpl> {
+        self.0.borrow()
+    }
+
+    pub fn borrow_mut(&mut self) -> RefMut<EnvironmentImpl> {
+        self.0.borrow_mut()
+    }
+}
+
+impl EnvironmentImpl {
+    pub fn new() -> EnvironmentImpl {
+        Self {
+            parent: None,
+            values: HashMap::new(),
+        }
+    }
+
+    pub fn with_parent(parent: Environment) -> EnvironmentImpl {
+        Self {
             parent: Some(parent),
             values: HashMap::new(),
-        })
+        }
     }
 }

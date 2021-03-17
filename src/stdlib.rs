@@ -1,4 +1,4 @@
-use std::rc::Rc;
+use std::collections::HashMap;
 
 use crate::data::{Environment, RuntimeVal};
 
@@ -11,11 +11,13 @@ macro_rules! def_func {
     };
 }
 
-pub fn std_env() -> Rc<Environment> {
+pub fn std_env() -> Environment {
     let mut env = Environment::new();
-    let map = &mut Rc::get_mut(&mut env)
-        .expect("std env was already borrowed before returning it")
-        .values;
+    define_prelude_functions(&mut env.borrow_mut().values);
+    env
+}
+
+fn define_prelude_functions(map: &mut HashMap<String, RuntimeVal>) {
     def_func!(map, "print", |_, args| {
         for arg in args.into_iter() {
             print!("{}", arg.repr());
@@ -27,5 +29,4 @@ pub fn std_env() -> Rc<Environment> {
         assert!(args.len() == 1);
         RuntimeVal::StringVal(args[0].repr())
     });
-    env
 }

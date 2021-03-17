@@ -1,10 +1,10 @@
 use core::panic;
 use std::{iter::Enumerate, rc::Rc};
 
-use crate::data::RuntimeVal;
-use crate::data::{Environment, SExpr};
+use crate::data::{Environment, RuntimeVal};
+use crate::data::{EnvironmentImpl, SExpr};
 
-pub fn eval(env: Rc<Environment>, expr: &SExpr) -> RuntimeVal {
+pub fn eval(env: Environment, expr: &SExpr) -> RuntimeVal {
     match expr {
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
@@ -13,28 +13,28 @@ pub fn eval(env: Rc<Environment>, expr: &SExpr) -> RuntimeVal {
     }
 }
 
-fn eval_symbol(env: Rc<Environment>, expr: &String) -> RuntimeVal {
-    let val = env.values.get(expr).expect("symbol not defined");
-    (*val).clone()
+fn eval_symbol(env: Environment, expr: &String) -> RuntimeVal {
+    env.borrow()
+        .values
+        .get(expr)
+        .expect("symbol not defined")
+        .clone()
 }
 
-fn eval_list(mut env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_list(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
     if vals.is_empty() {
         return RuntimeVal::nil();
     }
-    match try_eval_special_form(env, vals) {
-        TryEvalRes::NotEvaluated(restored_env) => env = restored_env,
-        TryEvalRes::Evaluated(val) => return val,
+    if let Ok(val) = try_eval_special_form(env.clone(), vals) {
+        return val;
     }
     let mut evaled: Vec<RuntimeVal> = vals.iter().map(|expr| eval(env.clone(), expr)).collect();
     let func = evaled.remove(0);
     match func {
         RuntimeVal::Func(func) => {
-            let mut func_env = Environment::with_parent(env.clone());
+            let func_env = Environment::with_parent(env.clone());
             assert_eq!(evaled.len(), func.args.len());
-            let func_env_map = &mut Rc::get_mut(&mut func_env)
-                .expect("func_env was cloned before")
-                .values;
+            let func_env_map = &mut env.borrow_mut().values;
             for (name, val) in func.args.iter().zip(evaled.into_iter()) {
                 func_env_map.insert(name.clone(), val);
             }
@@ -45,29 +45,26 @@ fn eval_list(mut env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
     }
 }
 
-enum TryEvalRes {
-    NotEvaluated(Rc<Environment>),
-    Evaluated(RuntimeVal),
-}
+struct NotSpecialForm;
 
-fn try_eval_special_form(env: Rc<Environment>, vals: &Vec<SExpr>) -> TryEvalRes {
+fn try_eval_special_form(
+    env: Environment,
+    vals: &Vec<SExpr>,
+) -> Result<RuntimeVal, NotSpecialForm> {
     match &vals[0] {
         SExpr::Symbol(symbol) => match symbol.as_ref() {
-            "def" => TryEvalRes::Evaluated(eval_define(env, vals)),
-            _ => TryEvalRes::NotEvaluated(env),
+            "def" => Ok(eval_define(env, vals)),
+            _ => Err(NotSpecialForm),
         },
-        _ => TryEvalRes::NotEvaluated(env),
+        _ => Err(NotSpecialForm),
     }
 }
 
-fn eval_define(mut env: Rc<Environment>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_define(mut env: Environment, vals: &Vec<SExpr>) -> RuntimeVal {
     if let [_, SExpr::List(inner), val] = vals.as_slice() {
         if let [SExpr::Symbol(name)] = inner.as_slice() {
             let evaled = eval(env.clone(), val);
-            Rc::get_mut(&mut env)
-                .expect("yeah this won't work")
-                .values
-                .insert(name.clone(), evaled);
+            env.borrow_mut().values.insert(name.clone(), evaled);
             return RuntimeVal::nil();
         }
     }
