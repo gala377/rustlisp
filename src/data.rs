@@ -159,11 +159,6 @@ impl EnvironmentImpl {
 pub type SymbolId = usize;
 pub type SymbolTable = Vec<String>;
 
-pub struct SymbolTableBuilder {
-    symbols: HashMap<String, SymbolId>,
-    symbol_table: SymbolTable,
-}
-
 macro_rules! build_sym_table {
     ($($name:literal => $val:expr),*$(,)?) => {
         {
@@ -226,6 +221,11 @@ generate_builtin_symbols!{
     }
 }
 
+pub struct SymbolTableBuilder {
+    symbols: HashMap<String, SymbolId>,
+    symbol_table: SymbolTable,
+}
+
 impl SymbolTableBuilder {
     pub fn builtin() -> Self {
         let (symbols, symbol_table) = builtins_symbol_table();
@@ -233,6 +233,21 @@ impl SymbolTableBuilder {
             symbols,
             symbol_table,
         }
+    }
+
+    pub fn with_symbols(symbols: &SymbolTable) -> Self {
+        let mut map = HashMap::new();
+        for (i, val) in symbols.iter().enumerate() {
+            map.insert(val.clone(), i);
+        }
+        Self {
+            symbols: map,
+            symbol_table: symbols.clone(),
+        }
+    }
+
+    pub fn update_table(&self, table: &mut SymbolTable) {
+        table.clone_from(&self.symbol_table);
     }
 
     pub fn build(self) -> SymbolTable {
