@@ -132,10 +132,11 @@ fn load_from_file(
         },
         RuntimeVal::StringVal(ref path) => {
             let sym_builder = SymbolTableBuilder::with_symbols(symbols);
+            let file_source = std::fs::read_to_string(path).unwrap();
             let AST {
                 program,
                 mut symbol_table,
-            } = reader::load(path, sym_builder).unwrap();
+            } = reader::load(&file_source, sym_builder).unwrap();
             let file_env = stdlib::std_env(&mut symbol_table);
             symbol_table.update_table(symbols);
             program.into_iter().for_each(|expr| {

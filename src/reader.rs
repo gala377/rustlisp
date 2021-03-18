@@ -8,6 +8,7 @@ pub enum ParseError {
     UnexpectedEOF,
 }
 
+#[derive(Debug)]
 enum Token {
     Val(String),
     LeftBracket,
@@ -63,7 +64,7 @@ pub fn read(source: &str) -> Result<AST, ParseError> {
 
 pub fn load(source: &str, mut symbol_table: SymbolTableBuilder) -> Result<AST, ParseError> {
     let tokens = tokenize(source);
-    let program = parse_program(tokens.into_iter(), &mut &mut symbol_table)?;
+    let program = parse_program(tokens.into_iter(), &mut symbol_table)?;
     Ok(AST {
         program,
         symbol_table,

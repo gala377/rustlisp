@@ -5,7 +5,6 @@ mod stdlib;
 mod utils;
 
 use reader::{read, ParseError, AST};
-use utils::print_ast;
 
 fn main() -> Result<(), ParseError> {
     let source_code = std::fs::read_to_string("input.rlp").unwrap();
@@ -16,10 +15,8 @@ fn main() -> Result<(), ParseError> {
     print!("\n\n\n");
     let env = stdlib::std_env(&mut symbol_table);
     let mut symbol_table = symbol_table.build();
-    print_ast(&program, &symbol_table);
     for expr in &program {
-        let val = eval::eval(env.clone(), None, &mut symbol_table, expr);
-        println!("Evaled to value: {}", val.repr(&symbol_table));
+        eval::eval(env.clone(), None, &mut symbol_table, expr);
     }
     Ok(())
 }

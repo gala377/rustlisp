@@ -1,0 +1,15 @@
+
+(print "Does it work?")
+(print "Yey it works!!!")
+(print "have some functions")
+
+
+(def (exported smth)
+    (print (+
+        "thats from exported->"
+        smth)))
+
+(def CONST-VAL 1000000)
+(def dont-rewrite "REWRITEN")
+
+(print "okay everything ended")
