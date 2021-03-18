@@ -24,7 +24,7 @@ const PROGRAM: &'static str = r#"
     (def (times x) (+ x x))
     (def (apply func arg) (func arg))
     (apply times 10)
-    (def _ (begin 
+    (def _ (begin
         (print 1)
         (print 2)
         (print 3)
@@ -41,6 +41,12 @@ const PROGRAM: &'static str = r#"
     (myfunc)
     (quote ,(`myfunc print (my smth) 1))
     (print `(,(id 1) ,(id 2) (id (id 3))))
+
+    (def (times2 x) (+ x x))
+
+    (map times2 '(1 2 3 4 5 6))
+    (null? ())
+    (read-line)
 "#;
 
 fn main() -> Result<(), ParseError> {

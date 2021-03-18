@@ -13,12 +13,12 @@ pub fn eval(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: &SEx
     match expr {
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
-        SExpr::Symbol(val) => eval_symbol(globals, locals, *val),
+        SExpr::Symbol(val) => eval_symbol(globals, locals, symbols, *val),
         SExpr::List(val) => eval_list(globals, locals, symbols, val),
     }
 }
 
-fn eval_symbol(globals: Env, locals: Option<Env>, expr: SymbolId) -> RuntimeVal {
+fn eval_symbol(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: SymbolId) -> RuntimeVal {
     if let Some(mut env) = locals {
         loop {
             if let Some(val) = env.borrow().values.get(&expr) {
@@ -35,7 +35,7 @@ fn eval_symbol(globals: Env, locals: Option<Env>, expr: SymbolId) -> RuntimeVal 
         .borrow()
         .values
         .get(&expr)
-        .expect(&format!("symbol {} not defined", expr))
+        .expect(&format!("symbol {} not defined", symbols[expr]))
         .clone()
 }
 

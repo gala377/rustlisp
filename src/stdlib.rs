@@ -12,7 +12,7 @@ macro_rules! def_func {
 }
 
 macro_rules! def_functions {
-    ($map:ident, $symbols:ident, { $($name:literal => $func:expr ),+}) => {
+    ($map:ident, $symbols:ident, { $($name:literal => $func:expr ),+ $(,)?}) => {
         $(
             def_func!($map, $symbols, $name, $func);
          )+
@@ -42,7 +42,7 @@ fn define_prelude_functions(
             assert!(args.len() == 1);
             StringVal(args[0].repr(sym))
         },
-        "plus" => plus,
+        "+" => plus,
         "to-str" => |_, sym, args| {
             assert!(args.len() == 1, "function str accepts only one parameter");
             StringVal(args[0].str(sym))
@@ -57,7 +57,7 @@ fn define_prelude_functions(
 
         // lists
         "list" => |_, _, args| List(args),
-        "null" => |_, _, args| {
+        "null?" => |_, _, args| {
             assert_eq!(args.len(), 1, "null takes one argument");
             if let List(inner) = &args[0] {
                 RuntimeVal::predicate(inner.is_empty())
@@ -97,7 +97,7 @@ fn define_prelude_functions(
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
             StringVal(input)
-        }
+        },
     });
 }
 
