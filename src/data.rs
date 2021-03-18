@@ -38,6 +38,22 @@ impl RuntimeVal {
         RuntimeVal::List(Vec::new())
     }
 
+    pub fn sym_true() -> RuntimeVal {
+        RuntimeVal::Symbol(BuiltinSymbols::True as SymbolId)
+    }
+
+    pub fn predicate(val: bool) -> RuntimeVal {
+        if val {
+            Self::sym_true()
+        } else {
+            Self::sym_false()
+        }
+    }
+
+    pub fn sym_false() -> RuntimeVal {
+        RuntimeVal::Symbol(BuiltinSymbols::False as SymbolId)
+    }
+
     pub fn function(name: SymbolId, args: Vec<SymbolId>, body: SExpr) -> RuntimeVal {
         Self::Func(RuntimeFunc::new(name, args, body))
     }
@@ -154,6 +170,8 @@ pub enum BuiltinSymbols {
     Unquote,
     Quasiquote,
     Begin,
+    True,
+    False,
 }
 
 impl TryFrom<SymbolId> for BuiltinSymbols {
@@ -167,6 +185,8 @@ impl TryFrom<SymbolId> for BuiltinSymbols {
             2 => Ok(Unquote),
             3 => Ok(Quasiquote),
             4 => Ok(Begin),
+            5 => Ok(True),
+            6 => Ok(False),
             _ => Err("out of range"),
         }
     }
@@ -183,12 +203,16 @@ impl SymbolTableBuilder {
             BuiltinSymbols::Quasiquote as usize,
         );
         table.insert(String::from("begin"), BuiltinSymbols::Begin as usize);
+        table.insert(String::from("#t"), BuiltinSymbols::True as usize);
+        table.insert(String::from("#f"), BuiltinSymbols::False as usize);
         let symbol_table = vec![
             String::from("def"),
             String::from("quote"),
             String::from("unquote"),
             String::from("quasiquote"),
             String::from("begin"),
+            String::from("#t"),
+            String::from("#f"),
         ];
         Self {
             symbols: table,

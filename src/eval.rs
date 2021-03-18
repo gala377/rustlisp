@@ -18,11 +18,7 @@ pub fn eval(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: &SEx
     }
 }
 
-fn eval_symbol(
-    globals: Env,
-    locals: Option<Env>,
-    expr: SymbolId,
-) -> RuntimeVal {
+fn eval_symbol(globals: Env, locals: Option<Env>, expr: SymbolId) -> RuntimeVal {
     if let Some(mut env) = locals {
         loop {
             if let Some(val) = env.borrow().values.get(&expr) {
@@ -73,6 +69,29 @@ fn eval_list(
             eval(globals, Some(func_env), symbols, &func.body)
         }
         RuntimeVal::NativeFunc(func) => func(globals, symbols, evaled),
+        _ => panic!("first symbol of a list should refer to a function"),
+    }
+}
+
+pub fn call(
+    globals: Env,
+    symbols: &SymbolTable,
+    func: &RuntimeVal,
+    args: Vec<RuntimeVal>,
+) -> RuntimeVal {
+    match func {
+        RuntimeVal::Func(func) => {
+            let mut func_env = Environment::new();
+            assert_eq!(args.len(), func.args.len());
+            {
+                let func_env_map = &mut func_env.borrow_mut().values;
+                for (name, val) in func.args.iter().zip(args.into_iter()) {
+                    func_env_map.insert(name.clone(), val);
+                }
+            }
+            eval(globals, Some(func_env), symbols, &func.body)
+        }
+        RuntimeVal::NativeFunc(func) => func(globals, symbols, args),
         _ => panic!("first symbol of a list should refer to a function"),
     }
 }

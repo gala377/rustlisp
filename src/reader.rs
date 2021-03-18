@@ -122,9 +122,7 @@ where
     Err(ParseError::UnclosedList)
 }
 
-fn parse_string<It>(
-    curr_atom: &mut It,
-) -> Result<SExpr, ParseError>
+fn parse_string<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
 where
     It: Iterator<Item = Token>,
 {
