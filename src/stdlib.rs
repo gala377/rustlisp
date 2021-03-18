@@ -40,9 +40,9 @@ fn define_prelude_functions(
     def_func!(map, symbol_table, "list", |_, _, args| RuntimeVal::List(
         args
     ));
-    def_func!(map, symbol_table, "str", |_, syms, args| {
+    def_func!(map, symbol_table, "str", |_, sym, args| {
         assert!(args.len() == 1, "function str accepts only one parameter");
-        RuntimeVal::StringVal(args[0].str(syms))
+        RuntimeVal::StringVal(args[0].str(sym))
     });
 }
 
