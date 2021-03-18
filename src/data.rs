@@ -172,6 +172,10 @@ pub enum BuiltinSymbols {
     Begin,
     True,
     False,
+    Cond,
+    Lambda,
+    While,
+    If,
 }
 
 impl TryFrom<SymbolId> for BuiltinSymbols {
@@ -187,35 +191,49 @@ impl TryFrom<SymbolId> for BuiltinSymbols {
             4 => Ok(Begin),
             5 => Ok(True),
             6 => Ok(False),
+            7 => Ok(Cond),
+            8 => Ok(Lambda),
+            9 => Ok(While),
+            10 => Ok(If),
             _ => Err("out of range"),
         }
     }
 }
 
+macro_rules! build_sym_table {
+    ($($name:literal => $val:expr),*$(,)?) => {
+        {
+            let mut table = HashMap::new();
+            {$(
+                table.insert(String::from($name), $val as usize);
+            )*};
+            let mut symbol_table = Vec::new();
+            {$(
+                symbol_table.push(String::from($name));
+            )*};
+            (table, symbol_table)
+        }
+    };
+}
+
 impl SymbolTableBuilder {
     pub fn builtin() -> Self {
-        let mut table = HashMap::new();
-        table.insert(String::from("def"), BuiltinSymbols::Define as usize);
-        table.insert(String::from("quote"), BuiltinSymbols::Quote as usize);
-        table.insert(String::from("unquote"), BuiltinSymbols::Unquote as usize);
-        table.insert(
-            String::from("quasiquote"),
-            BuiltinSymbols::Quasiquote as usize,
-        );
-        table.insert(String::from("begin"), BuiltinSymbols::Begin as usize);
-        table.insert(String::from("#t"), BuiltinSymbols::True as usize);
-        table.insert(String::from("#f"), BuiltinSymbols::False as usize);
-        let symbol_table = vec![
-            String::from("def"),
-            String::from("quote"),
-            String::from("unquote"),
-            String::from("quasiquote"),
-            String::from("begin"),
-            String::from("#t"),
-            String::from("#f"),
-        ];
+        use BuiltinSymbols::*;
+        let (symbols, symbol_table) = build_sym_table!{
+            "def" => Define,
+            "quote" => Quote,
+            "unquote" => Unquote,
+            "quasiquote" => Quasiquote,
+            "begin" => Begin,
+            "#t" => True,
+            "#f" => False,
+            "cond" => Cond,
+            "lambda" => Lambda,
+            "while" => While,
+            "if" => If,
+        };
         Self {
-            symbols: table,
+            symbols,
             symbol_table,
         }
     }
