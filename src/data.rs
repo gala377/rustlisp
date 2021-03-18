@@ -164,42 +164,6 @@ pub struct SymbolTableBuilder {
     symbol_table: SymbolTable,
 }
 
-pub enum BuiltinSymbols {
-    Define,
-    Quote,
-    Unquote,
-    Quasiquote,
-    Begin,
-    True,
-    False,
-    Cond,
-    Lambda,
-    While,
-    If,
-}
-
-impl TryFrom<SymbolId> for BuiltinSymbols {
-    type Error = &'static str;
-
-    fn try_from(value: SymbolId) -> Result<Self, Self::Error> {
-        use BuiltinSymbols::*;
-        match value {
-            0 => Ok(Define),
-            1 => Ok(Quote),
-            2 => Ok(Unquote),
-            3 => Ok(Quasiquote),
-            4 => Ok(Begin),
-            5 => Ok(True),
-            6 => Ok(False),
-            7 => Ok(Cond),
-            8 => Ok(Lambda),
-            9 => Ok(While),
-            10 => Ok(If),
-            _ => Err("out of range"),
-        }
-    }
-}
-
 macro_rules! build_sym_table {
     ($($name:literal => $val:expr),*$(,)?) => {
         {
@@ -216,22 +180,55 @@ macro_rules! build_sym_table {
     };
 }
 
+macro_rules! generate_builtin_symbols {
+    ($enum_name:ident {$(( $name:literal: $num:literal ) => $sym:tt),*$(,)?}) => {
+        pub enum $enum_name {
+            $(
+                $sym,
+            )*
+        }
+
+        impl TryFrom<SymbolId> for $enum_name {
+            type Error = &'static str;
+            fn try_from(value: SymbolId) -> Result<Self, Self::Error> {
+                use $enum_name::*;
+                match value {
+                    $($num => Ok($sym),)*
+                    _ => Err("out of range"),
+                }
+            }
+        }
+
+        fn builtins_symbol_table() -> (HashMap<String, SymbolId>, SymbolTable) {
+            use $enum_name::*;
+            build_sym_table!{
+                $(
+                    $name => $sym,
+                )*
+            }
+        }
+    };
+}
+
+generate_builtin_symbols!{
+    BuiltinSymbols {
+        ("def": 0) => Define,
+        ("quote": 1) => Quote,
+        ("unquote": 2) => Unquote,
+        ("quasiquote": 3) => Quasiquote,
+        ("begin": 4) => Begin,
+        ("#t": 5) => True,
+        ("#f": 6) => False,
+        ("cond": 7) => Cond,
+        ("lambda": 8) => Lambda,
+        ("while": 9) => While,
+        ("If": 10) => If,
+    }
+}
+
 impl SymbolTableBuilder {
     pub fn builtin() -> Self {
-        use BuiltinSymbols::*;
-        let (symbols, symbol_table) = build_sym_table!{
-            "def" => Define,
-            "quote" => Quote,
-            "unquote" => Unquote,
-            "quasiquote" => Quasiquote,
-            "begin" => Begin,
-            "#t" => True,
-            "#f" => False,
-            "cond" => Cond,
-            "lambda" => Lambda,
-            "while" => While,
-            "if" => If,
-        };
+        let (symbols, symbol_table) = builtins_symbol_table();
         Self {
             symbols,
             symbol_table,
