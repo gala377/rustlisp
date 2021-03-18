@@ -101,7 +101,7 @@ fn define_prelude_functions(
     });
 }
 
-fn plus(env: Environment, _: &SymbolTable, args: Vec<RuntimeVal>) -> RuntimeVal {
+fn plus(env: Environment, _: &mut SymbolTable, args: Vec<RuntimeVal>) -> RuntimeVal {
     assert!(args.len() > 1, "Cannot add less than 2 values");
     match &args[0] {
         RuntimeVal::List(_) => concatenate_lists(env, args),
@@ -110,6 +110,10 @@ fn plus(env: Environment, _: &SymbolTable, args: Vec<RuntimeVal>) -> RuntimeVal 
         _ => panic!("You can only add lists, numbers or strings"),
     }
 }
+
+// fn load_from_file(env: Environment, symbols: &mut SymbolTable, args: Vec<RuntimeVal>) -> RuntimeVal {
+//
+// }
 
 fn add_numbers(_: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
     RuntimeVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {

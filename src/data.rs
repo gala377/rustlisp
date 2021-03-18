@@ -5,7 +5,7 @@ use std::{
     rc::Rc,
 };
 
-pub type NativeFunc = Rc<dyn Fn(Environment, &SymbolTable, Vec<RuntimeVal>) -> RuntimeVal>;
+pub type NativeFunc = Rc<dyn Fn(Environment, &mut SymbolTable, Vec<RuntimeVal>) -> RuntimeVal>;
 
 pub struct RuntimeFunc {
     pub body: Box<SExpr>,
@@ -60,7 +60,7 @@ impl RuntimeVal {
 
     pub fn native_function<Func>(func: Func) -> RuntimeVal
     where
-        Func: 'static + Fn(Environment, &SymbolTable, Vec<RuntimeVal>) -> RuntimeVal,
+        Func: 'static + Fn(Environment, &mut SymbolTable, Vec<RuntimeVal>) -> RuntimeVal,
     {
         RuntimeVal::NativeFunc(Rc::new(func))
     }
@@ -205,7 +205,7 @@ macro_rules! generate_builtin_symbols {
     };
 }
 
-generate_builtin_symbols!{
+generate_builtin_symbols! {
     BuiltinSymbols {
         ("def": 0) => Define,
         ("quote": 1) => Quote,

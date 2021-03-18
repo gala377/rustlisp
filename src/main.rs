@@ -15,10 +15,10 @@ fn main() -> Result<(), ParseError> {
     } = read(&source_code)?;
     print!("\n\n\n");
     let env = stdlib::std_env(&mut symbol_table);
-    let symbol_table = symbol_table.build();
+    let mut symbol_table = symbol_table.build();
     print_ast(&program, &symbol_table);
     for expr in &program {
-        let val = eval::eval(env.clone(), None, &symbol_table, expr);
+        let val = eval::eval(env.clone(), None, &mut symbol_table, expr);
         println!("Evaled to value: {}", val.repr(&symbol_table));
     }
     Ok(())

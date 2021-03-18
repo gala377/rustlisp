@@ -9,7 +9,12 @@ type Env = Environment;
 // When  we call a function we should only create a new env with global env as a parent
 //
 
-pub fn eval(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: &SExpr) -> RuntimeVal {
+pub fn eval(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &mut SymbolTable,
+    expr: &SExpr,
+) -> RuntimeVal {
     match expr {
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
         SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
@@ -21,7 +26,7 @@ pub fn eval(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: &SEx
 fn eval_symbol(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     expr: SymbolId,
 ) -> RuntimeVal {
     if let Some(mut env) = locals {
@@ -47,7 +52,7 @@ fn eval_symbol(
 fn eval_list(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
     if vals.is_empty() {
@@ -80,7 +85,7 @@ fn eval_list(
 
 pub fn call(
     globals: Env,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     func: &RuntimeVal,
     args: Vec<RuntimeVal>,
 ) -> RuntimeVal {
@@ -106,7 +111,7 @@ struct NotSpecialForm;
 fn try_eval_special_form(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> Result<RuntimeVal, NotSpecialForm> {
     match &vals[0] {
@@ -125,7 +130,7 @@ fn try_eval_special_form(
 fn eval_define(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
     let mut create_env = match locals {
@@ -178,7 +183,7 @@ fn eval_define(
 fn eval_begin(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
     let mut res = RuntimeVal::nil();
@@ -205,7 +210,7 @@ fn quote_expr(expr: &SExpr) -> RuntimeVal {
 fn eval_quasiquote(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
     assert_eq!(vals.len(), 2, "you can only quote single expression");
@@ -215,7 +220,7 @@ fn eval_quasiquote(
 fn quasiquote_expr(
     globals: Env,
     locals: Option<Env>,
-    symbols: &SymbolTable,
+    symbols: &mut SymbolTable,
     expr: &SExpr,
 ) -> RuntimeVal {
     match expr {
