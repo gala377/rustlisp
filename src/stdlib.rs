@@ -1,8 +1,12 @@
 use std::collections::HashMap;
 
-use crate::data::{Environment, RuntimeVal, SymbolId, SymbolTable, SymbolTableBuilder};
-use crate::eval;
-use crate::utils::concatenate_vectors;
+use crate::{
+    data::{Environment, RuntimeVal, SymbolId, SymbolTable, SymbolTableBuilder},
+    eval,
+    reader::{self, AST},
+    stdlib,
+    utils::concatenate_vectors,
+};
 
 macro_rules! def_func {
     ($map:ident, $symbols:ident, $name:literal, $lambda:expr) => {
@@ -98,6 +102,7 @@ fn define_prelude_functions(
             std::io::stdin().read_line(&mut input).unwrap();
             StringVal(input)
         },
+        "load" => load_from_file,
     });
 }
 
@@ -111,9 +116,37 @@ fn plus(env: Environment, _: &mut SymbolTable, args: Vec<RuntimeVal>) -> Runtime
     }
 }
 
-// fn load_from_file(env: Environment, symbols: &mut SymbolTable, args: Vec<RuntimeVal>) -> RuntimeVal {
-//
-// }
+fn load_from_file(
+    mut env: Environment,
+    symbols: &mut SymbolTable,
+    mut args: Vec<RuntimeVal>,
+) -> RuntimeVal {
+    assert_eq!(args.len(), 1, "load takes only one argument");
+    let arg = args.pop().unwrap();
+    match arg {
+        RuntimeVal::List(inner) => match &inner[..] {
+            [RuntimeVal::StringVal(_path), RuntimeVal::Symbol(_as_symbol)] => {
+                unimplemented!()
+            }
+            _ => panic!("this form of load requires a string path and a symbol"),
+        },
+        RuntimeVal::StringVal(ref path) => {
+            let sym_builder = SymbolTableBuilder::with_symbols(symbols);
+            let AST {
+                program,
+                mut symbol_table,
+            } = reader::load(path, sym_builder).unwrap();
+            let file_env = stdlib::std_env(&mut symbol_table);
+            symbol_table.update_table(symbols);
+            program.into_iter().for_each(|expr| {
+                eval::eval(file_env.clone(), None, symbols, &expr);
+            });
+            env.update_with(file_env);
+        }
+        _ => panic!("illegal form of load"),
+    }
+    RuntimeVal::nil()
+}
 
 fn add_numbers(_: Environment, args: Vec<RuntimeVal>) -> RuntimeVal {
     RuntimeVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {

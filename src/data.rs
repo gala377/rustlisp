@@ -122,6 +122,21 @@ impl Environment {
         Self::wrap(EnvironmentImpl::new())
     }
 
+    pub fn update_with(&mut self, other: Environment) {
+        let inner = match Rc::try_unwrap(other.0) {
+            Ok(val) => val,
+            _ => panic!("Merged env was borrowed by someone"),
+        };
+        let self_map = &mut self.borrow_mut().values;
+        inner
+            .into_inner()
+            .values
+            .into_iter()
+            .for_each(|(key, val)| {
+                self_map.entry(key).or_insert(val);
+            });
+    }
+
     #[allow(dead_code)]
     pub fn with_parent(parent: Environment) -> Self {
         Self::wrap(EnvironmentImpl::with_parent(parent))
@@ -132,7 +147,7 @@ impl Environment {
     }
 
     pub fn borrow_mut(&mut self) -> RefMut<EnvironmentImpl> {
-        self.0.borrow_mut()
+        (*self.0).borrow_mut()
     }
 
     pub fn into_parent(self) -> Option<Environment> {

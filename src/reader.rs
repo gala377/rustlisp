@@ -54,10 +54,19 @@ pub struct AST {
 pub fn read(source: &str) -> Result<AST, ParseError> {
     let tokens = tokenize(source);
     let mut symbol_table = SymbolTableBuilder::builtin();
-    let res = parse_program(tokens.into_iter(), &mut symbol_table)?;
+    let program = parse_program(tokens.into_iter(), &mut symbol_table)?;
     Ok(AST {
-        program: res,
-        symbol_table: symbol_table,
+        program,
+        symbol_table,
+    })
+}
+
+pub fn load(source: &str, mut symbol_table: SymbolTableBuilder) -> Result<AST, ParseError> {
+    let tokens = tokenize(source);
+    let program = parse_program(tokens.into_iter(), &mut &mut symbol_table)?;
+    Ok(AST {
+        program,
+        symbol_table,
     })
 }
 
