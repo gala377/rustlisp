@@ -75,7 +75,12 @@ fn define_prelude_functions(
             args.into_iter().for_each(|x|{ println!("{}", x.str(sym)) });
             RuntimeVal::nil()
         },
-        "read-line" => |_, _, _| {RuntimeVal::nil()}
+        "read-line" => |_, _, args| {
+            assert!(args.is_empty(), "read-line takes 0 arguments");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
+            StringVal(input)
+        }
     });
 }
 
