@@ -43,19 +43,36 @@ fn define_prelude_functions(
             StringVal(args[0].repr(sym))
         },
         "plus" => plus,
-        "str" => |_, sym, args| {
+        "to-str" => |_, sym, args| {
             assert!(args.len() == 1, "function str accepts only one parameter");
             StringVal(args[0].str(sym))
         },
+
         // functions
         "apply" => |env, sym, mut args: Vec<RuntimeVal>| {
             assert!(!args.is_empty(), "Cannot apply nothing");
             let func = args.remove(0);
             eval::call(env, sym, &func, args)
         },
-        // lists
 
+        // lists
         "list" => |_, _, args| List(args),
+        "null" => |_, _, args| {
+            assert_eq!(args.len(), 1, "null takes one argument");
+            if let List(inner) = &args[0] {
+                RuntimeVal::predicate(inner.is_empty())
+            } else {
+                panic!("null can only be called on lists");
+            }
+        },
+        "list?" => |_, _, args| {
+            assert_eq!(args.len(), 1, "list? takes one argument");
+            if let List(_) = &args[0] {
+                RuntimeVal::sym_true()
+            } else {
+                RuntimeVal::sym_false()
+            }
+        },
         "map" => |env, sym, mut args| {
             assert_eq!(args.len(), 2, "you have to map function onto a list");
             let (list, func) = (args.pop().unwrap(), args.pop().unwrap());
