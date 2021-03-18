@@ -18,7 +18,12 @@ pub fn eval(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: &SEx
     }
 }
 
-fn eval_symbol(globals: Env, locals: Option<Env>, symbols: &SymbolTable, expr: SymbolId) -> RuntimeVal {
+fn eval_symbol(
+    globals: Env,
+    locals: Option<Env>,
+    symbols: &SymbolTable,
+    expr: SymbolId,
+) -> RuntimeVal {
     if let Some(mut env) = locals {
         loop {
             if let Some(val) = env.borrow().values.get(&expr) {
