@@ -2,7 +2,6 @@ use std::env;
 
 use lispylib;
 
-
 fn get_file_name(args: Vec<String>) -> String {
     match args.len() {
         1 => "input.rlp".to_string(),
@@ -10,7 +9,6 @@ fn get_file_name(args: Vec<String>) -> String {
         _ => panic!("Provide one argument - file to interpret"),
     }
 }
-
 
 fn main() -> Result<(), lispylib::ParseError> {
     let filename = get_file_name(env::args().collect());

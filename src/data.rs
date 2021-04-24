@@ -1,5 +1,5 @@
 use std::{
-    cell::{Ref, RefCell, RefMut},
+    cell::RefCell,
     collections::HashMap,
     convert::TryFrom,
     rc::Rc,
@@ -7,6 +7,12 @@ use std::{
 
 pub type NativeFunc = Rc<dyn Fn(Environment, &mut SymbolTable, Vec<RuntimeVal>) -> RuntimeVal>;
 
+pub type Ref<T> = Rc<T>;
+pub type MutRef<T> = Rc<RefCell<T>>;
+
+/// todo:
+/// Is this type really necessary for us?
+/// We could just have anonymous functions right?
 pub struct RuntimeFunc {
     pub body: Box<SExpr>,
     pub name: SymbolId,
@@ -23,14 +29,36 @@ impl RuntimeFunc {
     }
 }
 
+pub struct Lambda {
+    pub body: Box<SExpr>,
+    pub args: Vec<SymbolId>,
+    pub env: Environment,
+}
+
+impl Lambda {
+    fn new(env: Environment, args: Vec<SymbolId>, body: SExpr) -> MutRef<Self> {
+        Rc::new(RefCell::new(Self {
+            env,
+            args,
+            body: Box::new(body),
+        }))
+    }
+}
+
 #[derive(Clone)]
 pub enum RuntimeVal {
+    // Copy types
     NumberVal(f64),
     StringVal(String),
     Symbol(SymbolId),
     List(Vec<RuntimeVal>),
-    Func(Rc<RuntimeFunc>),
+
+    // Reference immutable types
+    Func(Ref<RuntimeFunc>),
     NativeFunc(NativeFunc),
+
+    // Mutable reference types
+    Lambda(MutRef<Lambda>),
 }
 
 impl RuntimeVal {
@@ -58,6 +86,10 @@ impl RuntimeVal {
         Self::Func(RuntimeFunc::new(name, args, body))
     }
 
+    pub fn lambda(env: Environment, args: Vec<SymbolId>, body: SExpr) -> RuntimeVal {
+        Self::Lambda(Lambda::new(env, args, body))
+    }
+
     pub fn native_function<Func>(func: Func) -> RuntimeVal
     where
         Func: 'static + Fn(Environment, &mut SymbolTable, Vec<RuntimeVal>) -> RuntimeVal,
@@ -82,6 +114,7 @@ impl RuntimeVal {
             }
             NativeFunc(_) => String::from("Native function object"),
             Func(_) => String::from("Function object"),
+            Lambda(_) => String::from("Lambda object"),
         }
     }
 
@@ -137,16 +170,24 @@ impl Environment {
             });
     }
 
+    pub fn split(self) -> Environment {
+        let inner = self.borrow();
+        Self(Rc::new(RefCell::new(EnvironmentImpl {
+            parent: inner.parent.clone(),
+            values: inner.values.clone(),
+        })))
+    }
+
     #[allow(dead_code)]
     pub fn with_parent(parent: Environment) -> Self {
         Self::wrap(EnvironmentImpl::with_parent(parent))
     }
 
-    pub fn borrow(&self) -> Ref<EnvironmentImpl> {
+    pub fn borrow(&self) -> std::cell::Ref<EnvironmentImpl> {
         self.0.borrow()
     }
 
-    pub fn borrow_mut(&mut self) -> RefMut<EnvironmentImpl> {
+    pub fn borrow_mut(&mut self) -> std::cell::RefMut<EnvironmentImpl> {
         (*self.0).borrow_mut()
     }
 
@@ -188,7 +229,7 @@ pub type SymbolTable = Vec<String>;
 /// `$name` should be a `str` literal and `$val` should be a `SymbolId`.
 ///
 /// # Returns
-/// 
+///
 /// A tuple string to symbol mapping and a mapping from symbol to string.
 /// The first one is a `HashMap<String, SymbolId>` and
 /// the second one is a `SymbolTable`.

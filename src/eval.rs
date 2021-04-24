@@ -1,13 +1,14 @@
+use core::panic;
 use std::convert::TryInto;
 
 use crate::data::{BuiltinSymbols, Environment, RuntimeVal, SExpr, SymbolId, SymbolTable};
 
 type Env = Environment;
 
+// todo:
 // There are no lambdas yet.
 // There is a problem with dynamic scoping which we do not want.
 // When  we call a function we should only create a new env with global env as a parent
-//
 
 pub fn eval(
     globals: Env,
@@ -66,21 +67,7 @@ fn eval_list(
         .map(|expr| eval(globals.clone(), locals.clone(), symbols, expr))
         .collect();
     let func = evaled.remove(0);
-    match func {
-        RuntimeVal::Func(func) => {
-            let mut func_env = Environment::new();
-            assert_eq!(evaled.len(), func.args.len());
-            {
-                let func_env_map = &mut func_env.borrow_mut().values;
-                for (name, val) in func.args.iter().zip(evaled.into_iter()) {
-                    func_env_map.insert(name.clone(), val);
-                }
-            }
-            eval(globals, Some(func_env), symbols, &func.body)
-        }
-        RuntimeVal::NativeFunc(func) => func(globals, symbols, evaled),
-        _ => panic!("first symbol of a list should refer to a function"),
-    }
+    call(globals, symbols, &func, evaled)
 }
 
 pub fn call(
@@ -91,19 +78,47 @@ pub fn call(
 ) -> RuntimeVal {
     match func {
         RuntimeVal::Func(func) => {
-            let mut func_env = Environment::new();
-            assert_eq!(args.len(), func.args.len());
-            {
-                let func_env_map = &mut func_env.borrow_mut().values;
-                for (name, val) in func.args.iter().zip(args.into_iter()) {
-                    func_env_map.insert(name.clone(), val);
-                }
-            }
+            let func_env = func_call_env(&func.args, args);
             eval(globals, Some(func_env), symbols, &func.body)
+        }
+        RuntimeVal::Lambda(lambda_ref) => {
+            // lambda can mutably change its environment (not now but at some point)
+            // Q: the same would apply for normal function and changing global env?
+            // A: Yes, however normal function does not carry the globals inside its structure
+            //    while lambda does carry its env with it. So normal function doesn't change itself
+            //    while lambda can.
+            let lambda = lambda_ref.borrow_mut();
+            let func_env = func_call_env_with_parent(&lambda.args, args, lambda.env.clone());
+            eval(globals, Some(func_env), symbols, &lambda.body)
         }
         RuntimeVal::NativeFunc(func) => func(globals, symbols, args),
         _ => panic!("first symbol of a list should refer to a function"),
     }
+}
+
+fn func_call_env(args: &[SymbolId], values: Vec<RuntimeVal>) -> Environment {
+    let func_env = Environment::new();
+    populate_env(func_env, args, values)
+}
+
+fn func_call_env_with_parent(
+    args: &[SymbolId],
+    values: Vec<RuntimeVal>,
+    parent: Environment,
+) -> Environment {
+    let func_env = Environment::with_parent(parent);
+    populate_env(func_env, args, values)
+}
+
+fn populate_env(mut env: Environment, args: &[SymbolId], values: Vec<RuntimeVal>) -> Environment {
+    assert_eq!(values.len(), args.len());
+    {
+        let func_env_map = &mut env.borrow_mut().values;
+        for (name, val) in args.iter().zip(values.into_iter()) {
+            func_env_map.insert(name.clone(), val);
+        }
+    }
+    env
 }
 
 struct NotSpecialForm;
@@ -121,6 +136,7 @@ fn try_eval_special_form(
             Ok(BuiltinSymbols::Quote) => Ok(eval_quote(globals, locals, vals)),
             Ok(BuiltinSymbols::Quasiquote) => Ok(eval_quasiquote(globals, locals, symbols, vals)),
             Ok(BuiltinSymbols::Unquote) => panic!("Unquote in not quasiquoted context"),
+            Ok(BuiltinSymbols::Lambda) => Ok(eval_lambda(globals, locals, symbols, vals)),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
@@ -142,42 +158,65 @@ fn eval_define(
         [_, SExpr::Symbol(name), val] => {
             let evaled = eval(globals.clone(), locals.clone(), symbols, val);
             create_env.borrow_mut().values.insert(name.clone(), evaled);
-            return RuntimeVal::nil();
+            RuntimeVal::nil()
         }
         // function define form
         [_, SExpr::List(inner), body @ ..] => {
             if let [SExpr::Symbol(name), args @ ..] = &inner[..] {
-                assert!(!body.is_empty(), "function body cannot be empty");
-                let args: Vec<SymbolId> = args
-                    .iter()
-                    .map(|x| {
-                        if let SExpr::Symbol(name) = x {
-                            name.clone()
-                        } else {
-                            panic!("function arguments should be symbols");
-                        }
-                    })
-                    .collect();
-                let body = if body.len() == 1 {
-                    body[0].clone()
-                } else {
-                    let mut inner = vec![SExpr::Symbol(BuiltinSymbols::Begin as SymbolId)];
-                    inner.extend(body.into_iter().map(Clone::clone));
-                    SExpr::List(inner)
-                };
+                let body = prepare_function_body(body);
+                let args = collect_function_definition_arguments(args);
                 let function = RuntimeVal::function(name.clone(), args, body);
                 create_env
                     .borrow_mut()
                     .values
                     .insert(name.clone(), function);
-                return RuntimeVal::nil();
+                RuntimeVal::nil()
             } else {
-                panic!("wrong function define form");
+                panic!("wrong function define form")
             }
         }
-        _ => (),
+        _ => panic!("not a define form"),
     }
-    panic!("not a define form");
+}
+
+fn eval_lambda(
+    _globals: Env,
+    locals: Option<Env>,
+    _symbols: &mut SymbolTable,
+    vals: &Vec<SExpr>,
+) -> RuntimeVal {
+    let locals = locals.map(Environment::split).unwrap_or(Environment::new());
+    match &vals[..] {
+        [_, SExpr::List(args), body @ ..] => {
+            let body = prepare_function_body(body);
+            let args = collect_function_definition_arguments(args);
+            RuntimeVal::lambda(locals, args, body)
+        }
+        _ => panic!("not a lambda form"),
+    }
+}
+
+fn collect_function_definition_arguments(args: &[SExpr]) -> Vec<SymbolId> {
+    args.iter()
+        .map(|x| {
+            if let SExpr::Symbol(name) = x {
+                name.clone()
+            } else {
+                panic!("function arguments should be symbols");
+            }
+        })
+        .collect()
+}
+
+fn prepare_function_body(body: &[SExpr]) -> SExpr {
+    assert!(!body.is_empty(), "function body cannot be empty");
+    if body.len() == 1 {
+        body[0].clone()
+    } else {
+        let mut inner = vec![SExpr::Symbol(BuiltinSymbols::Begin as SymbolId)];
+        inner.extend(body.into_iter().map(Clone::clone));
+        SExpr::List(inner)
+    }
 }
 
 fn eval_begin(

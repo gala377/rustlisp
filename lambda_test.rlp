@@ -1,0 +1,29 @@
+(def a (lambda (x) (+ x 10)))
+(print (a 10))
+
+(def (add y) (lambda (x) (+ x y)))
+(def add2 (add 2))
+(print (add2 10))
+
+(def (redef y)
+    (def y 10)
+    (def func (lambda (x) (+ x y)))
+    func
+)
+
+(print ((redef 1) 1))
+
+(def (redef y)
+    (def func (lambda (x) (+ x y)))
+    (def y 10)
+    func
+)
+
+(print ((redef 1) 1))
+
+(def y 100)
+(def (using-global) (lambda(x) (+ x y)))
+(def gfunc (using-global))
+(print (gfunc 10))
+(def y 0)
+(print (gfunc 10))
