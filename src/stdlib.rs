@@ -121,6 +121,20 @@ fn load_from_file(
     symbols: &mut SymbolTable,
     mut args: Vec<RuntimeVal>,
 ) -> RuntimeVal {
+    //! todo:
+    //!
+    //! When loading a function from another file if its body
+    //! refers to function which exists in both files then the
+    //! refereed function changes. We need namespaces.
+    //!
+    //! file1.rlp
+    //! (def val 1)
+    //! (def (get-val) val)
+    //!
+    //! file2.rlp
+    //! (def val 5)
+    //! (load "file1.rlp")
+    //! (eq? (get-val) 5) ; that is true and shouldn't be
     assert_eq!(args.len(), 1, "load takes only one argument");
     let arg = args.pop().unwrap();
     match arg {
@@ -131,14 +145,14 @@ fn load_from_file(
             _ => panic!("this form of load requires a string path and a symbol"),
         },
         RuntimeVal::StringVal(ref path) => {
-            let sym_builder = SymbolTableBuilder::with_symbols(symbols);
+            let symbol_table_builder = SymbolTableBuilder::with_symbols(symbols);
             let file_source = std::fs::read_to_string(path).unwrap();
             let AST {
                 program,
-                mut symbol_table,
-            } = reader::load(&file_source, sym_builder).unwrap();
-            let file_env = stdlib::std_env(&mut symbol_table);
-            symbol_table.update_table(symbols);
+                mut symbol_table_builder,
+            } = reader::load(&file_source, symbol_table_builder).unwrap();
+            let file_env = stdlib::std_env(&mut symbol_table_builder);
+            symbol_table_builder.update_table(symbols);
             program.into_iter().for_each(|expr| {
                 eval::eval(file_env.clone(), None, symbols, &expr);
             });

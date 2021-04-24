@@ -12,4 +12,9 @@
 (def CONST-VAL 1000000)
 (def dont-rewrite "REWRITEN")
 
+(def (using-old-rewrite) 
+    (print dont-rewrite)
+    dont-rewrite)
+
+
 (print "okay everything ended")

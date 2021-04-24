@@ -13,4 +13,7 @@
 (print dont-rewrite)
 (exported "is it working?")
 
+(print "Checking overloading?")
+(print (+ "Expected: REWRITTEN " "got: " (using-old-rewrite)))
+
 (print "ending main module")

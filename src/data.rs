@@ -171,9 +171,37 @@ impl EnvironmentImpl {
     }
 }
 
+/// Symbols Identifier.
+/// Can be used to quickly compare symbols for identity.
 pub type SymbolId = usize;
+
+/// An associating table mapping SymbolId to its string representation.
 pub type SymbolTable = Vec<String>;
 
+/// Creates symbol table with provided symbols as well as
+/// reverse mapping from string to `SymbolId`
+///
+/// # Syntax
+///
+/// Body of a macro consists of one or more arms.
+/// Each arm has a form `$name => $val`.
+/// `$name` should be a `str` literal and `$val` should be a `SymbolId`.
+///
+/// # Returns
+/// 
+/// A tuple string to symbol mapping and a mapping from symbol to string.
+/// The first one is a `HashMap<String, SymbolId>` and
+/// the second one is a `SymbolTable`.
+///
+/// # Examples
+///
+/// ```
+/// let (string_to_sym, sym_to_string) = build_sym_table!{
+///     "define" => 0,
+///     "not" => 1,
+/// };
+/// assert_eq!(string_to_sym.get(sym_to_string[0]).unwrap(), 0);
+/// ```
 macro_rules! build_sym_table {
     ($($name:literal => $val:expr),*$(,)?) => {
         {
@@ -190,6 +218,46 @@ macro_rules! build_sym_table {
     };
 }
 
+/// Provides convenient syntax to predefine symbols before parsing.
+/// For example could be used to predefine special form symbols for
+/// easier reference during evaluation.
+///
+/// # Syntax
+///
+/// Syntax looks like defining a special enum.
+/// Each enum variant is in form `($pattern: $id) => $variant,`
+/// where `$pattern` is a literal string representing a symbol in source,
+/// `$id` should be an incrementing integer, starting from zero,
+/// corresponding to the `SymbolId` of the symbol and `$variant` is a variants identifier
+/// in the enums definition.
+///
+/// The enum then will be generated with the provided name and the provided variants.
+/// Additionally the enum will provide `try_from` method to convert `SymbolId` to itself.
+///
+/// # Generates
+///
+/// Enum with provided name and variants corresponding to defined variants.
+///
+/// `builtin_symbol_table` convenience function returning mappings
+/// from string to symbol and reverse, filled with defined symbols.
+////
+/// # Examples
+///
+/// ```
+///   generate_builtin_symbols! {
+///       BuiltinSymbols { // name of the generated enum
+///          ("define": 0) => Define, // `define` variant
+///          ("not": 1) => Not, // `not` variant
+///       }
+///   }
+///
+///   let (str_to_sym, sym_to_str) = builtin_symbol_table();
+///   let sym = str_to_sym.get(&"not").unwrap();
+///   match (*sym).try_into() {
+///      BuiltinSymbols::Not => (),
+///      _ => panic!("expected not symbol"),
+///   }
+/// ```
 macro_rules! generate_builtin_symbols {
     ($enum_name:ident {$(( $name:literal: $num:literal ) => $sym:tt),*$(,)?}) => {
         pub enum $enum_name {
@@ -232,7 +300,7 @@ generate_builtin_symbols! {
         ("cond": 7) => Cond,
         ("lambda": 8) => Lambda,
         ("while": 9) => While,
-        ("If": 10) => If,
+        ("if": 10) => If,
     }
 }
 

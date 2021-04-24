@@ -1,22 +1,29 @@
-mod data;
-mod eval;
-mod reader;
-mod stdlib;
-mod utils;
+use std::env;
 
-use reader::{read, ParseError, AST};
+use lispylib;
 
-fn main() -> Result<(), ParseError> {
-    let source_code = std::fs::read_to_string("input.rlp").unwrap();
-    let AST {
+
+fn get_file_name(args: Vec<String>) -> String {
+    match args.len() {
+        1 => "input.rlp".to_string(),
+        2 => args[1].clone(),
+        _ => panic!("Provide one argument - file to interpret"),
+    }
+}
+
+
+fn main() -> Result<(), lispylib::ParseError> {
+    let filename = get_file_name(env::args().collect());
+    let source_code = std::fs::read_to_string(filename).unwrap();
+    let lispylib::AST {
         program,
-        mut symbol_table,
-    } = read(&source_code)?;
+        mut symbol_table_builder,
+    } = lispylib::read(&source_code)?;
     print!("\n\n\n");
-    let env = stdlib::std_env(&mut symbol_table);
-    let mut symbol_table = symbol_table.build();
+    let env = lispylib::stdlib::std_env(&mut symbol_table_builder);
+    let mut symbol_table = symbol_table_builder.build();
     for expr in &program {
-        eval::eval(env.clone(), None, &mut symbol_table, expr);
+        lispylib::eval(env.clone(), None, &mut symbol_table, expr);
     }
     Ok(())
 }
