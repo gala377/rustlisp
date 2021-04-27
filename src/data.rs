@@ -112,8 +112,8 @@ impl RuntimeVal {
                 res += ")";
                 res
             }
-            NativeFunc(_) => String::from("Native function object"),
-            Func(_) => String::from("Function object"),
+            NativeFunc(_) => String::from("Native function"),
+            Func(func) => format!("Function {}", symbol_table[func.name]),
             Lambda(_) => String::from("Lambda object"),
         }
     }
@@ -173,7 +173,7 @@ impl Environment {
     pub fn split(self) -> Environment {
         let inner = self.borrow();
         Self(Rc::new(RefCell::new(EnvironmentImpl {
-            parent: inner.parent.clone(),
+            parent: inner.parent.clone().map(Self::split),
             values: inner.values.clone(),
         })))
     }
