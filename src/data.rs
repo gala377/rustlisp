@@ -178,7 +178,6 @@ impl Environment {
         })))
     }
 
-    #[allow(dead_code)]
     pub fn with_parent(parent: Environment) -> Self {
         Self::wrap(EnvironmentImpl::with_parent(parent))
     }
