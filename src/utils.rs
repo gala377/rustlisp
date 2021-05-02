@@ -15,7 +15,7 @@ pub fn print_sexpr_impl(expr: &SExpr, symbols: &SymbolTable, depth: usize) {
     match expr {
         SExpr::LitNumber(val) => print!("{}", val),
         SExpr::LitString(val) => print!(r#""{}""#, val),
-        &SExpr::Symbol(val) => print!("{}", symbols[val]),
+        SExpr::Symbol(val) => print!("{}", symbols[*val]),
         SExpr::List(val) => {
             print!("\n{}(", " ".repeat(depth * 2));
             val.iter().for_each(|val| {
