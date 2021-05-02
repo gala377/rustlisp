@@ -1,8 +1,8 @@
 use std::env;
 
-use lispylib::{data, gc};
-use lispylib::runtime;
 use lispylib;
+use lispylib::runtime;
+use lispylib::{data, gc};
 
 fn get_file_name(args: Vec<String>) -> String {
     match args.len() {
@@ -31,7 +31,7 @@ fn main() -> Result<(), lispylib::ParseError> {
 // fn main() {
 //     let list = runtime::List{data: Vec::new()};
 //     let string = runtime::String{data: "Hello".into()};
-//     let mut heap = gc::Heap::new();
+//     let mut heap = gc::Heap::new(10);
 //     let mut list = heap.allocate(list);
 //     let string = heap.allocate(string);
 //     let mut list2 = list.clone();

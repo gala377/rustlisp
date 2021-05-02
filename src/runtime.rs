@@ -13,3 +13,9 @@ pub struct String {
 pub struct List {
     pub data: Vec<RuntimeVal>,
 }
+
+impl List {
+    pub fn new() -> Self {
+        Self { data: Vec::new() }
+    }
+}
