@@ -1,9 +1,4 @@
-use std::{
-    cell::RefCell,
-    collections::HashMap,
-    convert::TryFrom,
-    rc::Rc,
-};
+use std::{cell::RefCell, collections::HashMap, convert::TryFrom, rc::Rc};
 
 pub type NativeFunc = Rc<dyn Fn(Environment, &mut SymbolTable, Vec<RuntimeVal>) -> RuntimeVal>;
 
