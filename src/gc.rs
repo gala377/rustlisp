@@ -2,6 +2,7 @@ use std::ptr;
 
 use crate::runtime;
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
     Lambda,
     List,
@@ -45,6 +46,7 @@ impl Allocable for runtime::List {
     }
 }
 
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Header {
     pub size: usize,
     pub tag: TypeTag,
@@ -151,16 +153,6 @@ impl Heap {
         }
     }
 
-    pub fn free<T: Allocable>(&mut self, ptr: Gc<T>) {
-        // todo: implement
-        unimplemented!()
-    }
-
-    pub fn free_and_drop<T: Allocable>(&mut self, ptr: Gc<T>) {
-        // todo: implement
-        unimplemented!()
-    }
-
     fn insert_entry(&mut self, entry: HeapEntry) -> usize {
         match self.first_vacant {
             None => {
@@ -208,6 +200,8 @@ impl Heap {
 
 #[cfg(test)]
 mod tests {
+
+    use crate::data::RuntimeVal;
 
     use super::*;
 
@@ -292,15 +286,123 @@ mod tests {
         assert_eq!(heap.entries[ptr.entry_index].header.next_node, None);
     }
 
-    // second_allocated_entry_doesnt_change_the_data_of_the_first_entry
-    // second_allocated_entry_points_to_the_first_entry
-    // changing_data_through_gc_ptr_changes_data_in_heap_entry
-    // cloned_gc_pointers_point_to_the_same_data
-    // cloned_gc_pointers_can_can_change_the_same_data
-    // heap_size_doubles_after_allocating_on_full_heap
-    // full_heap_after_growing_has_vacant_entries
-    // full_heap_after_growing_has_all_data_copied
-    // full_heap_after_growing_does_not_invalidate_pointers
-    // freeing_data_of_an_entry_sets_its_index_as_first_vacant
-    // freeing_data_sets_new_vacant_entry_next_node_as_previous_first_vacant
+    #[test]
+    fn second_allocated_entry_does_not_change_the_data_of_the_first_entry() {
+        let mut heap = Heap::with_capacity(10);
+        let mut val1 = runtime::List::new();
+        val1.data.push(RuntimeVal::NumberVal(2.0));
+
+        let ptr1 = heap.allocate(val1);
+
+        let entry1_data = (&heap.entries[ptr1.entry_index])
+            .data
+            .as_ref()
+            .unwrap()
+            .to_vec();
+        let entry1_header = (&heap.entries[ptr1.entry_index]).header.clone();
+
+        let ptr2 = heap.allocate(runtime::List::new());
+
+        let entry2_data = (&heap.entries[ptr2.entry_index])
+            .data
+            .as_ref()
+            .unwrap()
+            .to_vec();
+        let entry2_header = (&heap.entries[ptr2.entry_index]).header.clone();
+
+        let entry1_new_data = (&heap.entries[ptr1.entry_index])
+            .data
+            .as_ref()
+            .unwrap()
+            .to_vec();
+        let entry1_new_header = (&heap.entries[ptr1.entry_index]).header.clone();
+
+        assert_eq!(entry1_data, entry1_new_data);
+        assert_eq!(entry1_header, entry1_new_header);
+        assert_ne!(entry2_data, entry1_data);
+        assert_ne!(entry2_header, entry1_header);
+    }
+
+    #[test]
+    fn second_allocated_entry_points_to_the_first_entry() {
+        let mut heap = Heap::with_capacity(10);
+        let ptr1 = heap.allocate(runtime::List::new());
+        let ptr2 = heap.allocate(runtime::List::new());
+        assert_eq!(
+            heap.entries[ptr2.entry_index].header.next_node.unwrap(),
+            ptr1.entry_index
+        );
+    }
+
+    #[test]
+    fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
+        let mut heap = Heap::with_capacity(10);
+        let mut ptr1 = heap.allocate(runtime::List::new());
+        unsafe { ptr1.data.as_mut().data.push(RuntimeVal::NumberVal(2.0)) }
+        let data_ref = *(&heap.entries[ptr1.entry_index]
+            .data
+            .as_ref()
+            .unwrap()
+            .as_ptr());
+        let data_ref = data_ref as *const runtime::List;
+        let data_ref = unsafe { data_ref.as_ref().unwrap() };
+        let heap_entry_val = match data_ref.data[0] {
+            RuntimeVal::NumberVal(x) => x,
+            _ => panic!("that should not happen"),
+        };
+        assert_eq!(data_ref.data.len(), 1);
+        assert_eq!(heap_entry_val, 2.0)
+    }
+
+    #[test]
+    fn cloned_gc_pointers_point_to_the_same_data() {
+        let mut heap = Heap::with_capacity(10);
+        let ptr1 = heap.allocate(runtime::List::new());
+        let ptr2 = ptr1.clone();
+        assert_eq!(ptr1.entry_index, ptr2.entry_index);
+        assert_eq!(ptr1.data.as_ptr(), ptr2.data.as_ptr());
+    }
+
+    #[test]
+    fn heap_size_at_lest_doubles_after_allocating_on_full_heap() {
+        const INITIAL_HEAP_CAPACITY: usize = 10;
+        let mut heap = Heap::with_capacity(INITIAL_HEAP_CAPACITY);
+        for _ in 0..=INITIAL_HEAP_CAPACITY {
+            heap.allocate(runtime::List::new());
+        }
+        assert!(heap.entries.len() >= INITIAL_HEAP_CAPACITY * 2);
+    }
+    #[test]
+    fn full_heap_after_growing_has_vacant_entries() {
+        // we need to have at least capacity 2 for this test to work
+        // as capacity 1 heap could frow to 2 in allocation and immediately
+        // take the only vacant entry, or it could grow more as `reserve` on `Vec`
+        // can give us more if it wants to.
+        let mut heap = Heap::with_capacity(2);
+        heap.allocate(runtime::List::new());
+        heap.allocate(runtime::List::new());
+        heap.allocate(runtime::List::new());
+        assert_eq!(heap.first_vacant.unwrap(), heap.entries.len() - 2);
+    }
+
+    #[test]
+    fn full_heap_after_growing_does_not_invalidate_pointers() {
+        let mut heap = Heap::with_capacity(1);
+        let mut ptr = heap.allocate(runtime::List::new());
+        heap.allocate(runtime::String::new());
+        unsafe { ptr.data.as_mut().data.push(RuntimeVal::NumberVal(10.0)) };
+        let data_ref = *(&heap.entries[ptr.entry_index]
+            .data
+            .as_ref()
+            .unwrap()
+            .as_ptr());
+        let data_ref = data_ref as *const runtime::List;
+        let data_ref = unsafe { data_ref.as_ref().unwrap() };
+        let heap_entry_val = match data_ref.data[0] {
+            RuntimeVal::NumberVal(x) => x,
+            _ => panic!("that should not happen"),
+        };
+        assert_eq!(data_ref.data.len(), 1);
+        assert_eq!(heap_entry_val, 10.0);
+    }
 }

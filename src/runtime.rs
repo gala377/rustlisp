@@ -10,6 +10,14 @@ pub struct String {
     pub data: std::string::String,
 }
 
+impl String {
+    pub fn new() -> Self {
+        Self {
+            data: std::string::String::new(),
+        }
+    }
+}
+
 pub struct List {
     pub data: Vec<RuntimeVal>,
 }
