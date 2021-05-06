@@ -1,6 +1,5 @@
 use std::ptr;
 
-use crate::runtime;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
@@ -183,6 +182,7 @@ impl Heap {
 mod tests {
 
     use super::*;
+    use crate::runtime;
 
     #[test]
     fn empty_heap_has_nonzero_capacity() {
