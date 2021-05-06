@@ -22,28 +22,6 @@ impl Lambda {
     }
 }
 
-pub struct String {
-    pub data: std::string::String,
-}
-
-impl String {
-    pub fn new() -> Self {
-        Self {
-            data: std::string::String::new(),
-        }
-    }
-}
-
-pub struct List {
-    pub data: Vec<RuntimeVal>,
-}
-
-impl List {
-    pub fn new() -> Self {
-        Self { data: Vec::new() }
-    }
-}
-
 pub struct RuntimeFunc {
     pub body: Box<SExpr>,
     pub name: SymbolId,
@@ -80,15 +58,10 @@ impl Allocable for Lambda {
 
 impl Allocable for String {
     fn tag() -> TypeTag {
-        TypeTag::None
+        TypeTag::String
     }
 }
 
-impl Allocable for List {
-    fn tag() -> TypeTag {
-        TypeTag::List
-    }
-}
 
 impl<T> Allocable for Vec<T> {
     fn tag() -> TypeTag {
@@ -96,15 +69,10 @@ impl<T> Allocable for Vec<T> {
     }
 }
 
-impl Allocable for std::string::String {
-    fn tag() -> TypeTag {
-        TypeTag::None
-    }
-}
 
 impl Allocable for RuntimeFunc {
     fn tag() -> TypeTag {
-        TypeTag::None
+        TypeTag::RuntimeFunc
     }
 }
 

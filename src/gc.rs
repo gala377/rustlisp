@@ -1,10 +1,14 @@
 use std::ptr;
 
+use crate::runtime::{self, RuntimeVal};
+
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
     Lambda,
     List,
+    String,
+    RuntimeFunc,
     None,
 }
 
@@ -63,8 +67,35 @@ impl Header {
 }
 
 pub struct HeapEntry {
-    pub data: Option<Box<()>>,
+    pub data: Option<ptr::NonNull<()>>,
     pub header: Header,
+}
+
+impl Drop for HeapEntry {
+    fn drop(&mut self) {
+        match &mut self.data {
+            None => (),
+            Some(ptr) => match &self.header.tag {
+                TypeTag::Lambda => unsafe {
+                    println!("Dropping lambda");
+                    std::ptr::drop_in_place(ptr.as_ptr() as *mut runtime::Lambda);
+                }
+                TypeTag::List => unsafe {
+                    println!("Dropping list");
+                    std::ptr::drop_in_place(ptr.as_ptr() as *mut Vec<RuntimeVal>);
+                }
+                TypeTag::RuntimeFunc => unsafe {
+                    println!("Dropping function");
+                    std::ptr::drop_in_place(ptr.as_ptr() as *mut runtime::RuntimeFunc);
+                }
+                TypeTag::String => unsafe {
+                    println!("Dropping string");
+                    std::ptr::drop_in_place(ptr.as_ptr() as *mut std::string::String);
+                }
+                TypeTag::None => (),
+            }
+        }
+    }
 }
 
 pub struct Heap {
@@ -117,14 +148,13 @@ impl Heap {
             tag: T::tag(),
             next_node: self.first_taken,
         };
+        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut ())};
         let entry = HeapEntry {
-            data: Some(data),
+            data: Some(ptr.clone()),
             header,
         };
         let entry_index = self.insert_entry(entry);
-        let ptr: &mut () = &mut (*(self.entries[entry_index].data.as_mut().unwrap()));
-        let ptr: *mut () = ptr;
-        let ptr = ptr as *mut T;
+        let ptr = ptr.as_ptr() as *mut T;
         Gc {
             data: unsafe { ptr::NonNull::new_unchecked(ptr) },
             entry_index,
@@ -166,238 +196,232 @@ impl Heap {
         self.first_vacant = Some(self.entries.len() - 1);
     }
 
-    pub fn as_boxed_bytes<T>(val: T) -> Box<()> {
+    pub fn as_boxed_bytes<T>(val: T) -> *mut T {
         let ptr = Box::new(val);
-        unsafe { Box::from_raw(Box::into_raw(ptr) as *mut ()) }
-        // let ptr: *const T = &val;
-        // let slice =
-        //     unsafe { std::slice::from_raw_parts(ptr as *const u8, std::mem::size_of::<T>()) };
-        // // todo: confirm it copies data
-        // let data: Box<[u8]> = slice.into();
-        // data
+        Box::into_raw(ptr)
     }
 }
 
-#[cfg(test)]
-mod tests {
+// #[cfg(test)]
+// mod tests {
 
-    use super::*;
-    use crate::runtime;
+//     use super::*;
+//     use crate::runtime;
 
-    #[test]
-    fn empty_heap_has_nonzero_capacity() {
-        let heap = Heap::new();
-        assert_ne!(heap.entries.len(), 0);
-    }
+//     #[test]
+//     fn empty_heap_has_nonzero_capacity() {
+//         let heap = Heap::new();
+//         assert_ne!(heap.entries.len(), 0);
+//     }
 
-    #[test]
-    fn new_heap_has_correct_capacity() {
-        let cap = 10;
-        let heap = Heap::with_capacity(cap);
-        assert_eq!(heap.entries.len(), cap);
-    }
+//     #[test]
+//     fn new_heap_has_correct_capacity() {
+//         let cap = 10;
+//         let heap = Heap::with_capacity(cap);
+//         assert_eq!(heap.entries.len(), cap);
+//     }
 
-    #[test]
-    #[should_panic]
-    fn heap_with_capacity_zero_panics() {
-        Heap::with_capacity(0);
-    }
+//     #[test]
+//     #[should_panic]
+//     fn heap_with_capacity_zero_panics() {
+//         Heap::with_capacity(0);
+//     }
 
-    #[test]
-    fn new_heap_has_vacant_entry_set() {
-        let heap = Heap::with_capacity(10);
-        assert!(heap.first_vacant.is_some());
-    }
+//     #[test]
+//     fn new_heap_has_vacant_entry_set() {
+//         let heap = Heap::with_capacity(10);
+//         assert!(heap.first_vacant.is_some());
+//     }
 
-    #[test]
-    fn new_heap_has_not_set_taken_entry() {
-        let heap = Heap::with_capacity(10);
-        assert!(heap.first_taken.is_none());
-    }
+//     #[test]
+//     fn new_heap_has_not_set_taken_entry() {
+//         let heap = Heap::with_capacity(10);
+//         assert!(heap.first_taken.is_none());
+//     }
 
-    #[test]
-    fn new_heap_has_no_taken_entries() {
-        let heap = Heap::with_capacity(10);
-        assert!(heap.entries.iter().all(|e| e.data.is_none()))
-    }
+//     #[test]
+//     fn new_heap_has_no_taken_entries() {
+//         let heap = Heap::with_capacity(10);
+//         assert!(heap.entries.iter().all(|e| e.data.is_none()))
+//     }
 
-    #[test]
-    fn new_heap_vacant_entries_are_linked() {
-        let cap = 10;
-        let heap = Heap::with_capacity(cap);
-        let mut curr = heap.first_vacant;
-        let mut vacant_entries = Vec::new();
-        while let Some(i) = curr {
-            vacant_entries.push(i);
-            curr = heap.entries[i].header.next_node;
-        }
-        vacant_entries.dedup();
-        assert_eq!(vacant_entries.len(), cap);
-    }
+//     #[test]
+//     fn new_heap_vacant_entries_are_linked() {
+//         let cap = 10;
+//         let heap = Heap::with_capacity(cap);
+//         let mut curr = heap.first_vacant;
+//         let mut vacant_entries = Vec::new();
+//         while let Some(i) = curr {
+//             vacant_entries.push(i);
+//             curr = heap.entries[i].header.next_node;
+//         }
+//         vacant_entries.dedup();
+//         assert_eq!(vacant_entries.len(), cap);
+//     }
 
-    #[test]
-    fn allocating_entry_sets_first_taken_to_first_vacant() {
-        let mut heap = Heap::new();
-        let first_vacant = heap.first_vacant.clone();
-        heap.allocate(runtime::List::new());
-        assert_eq!(first_vacant, heap.first_taken);
-    }
+//     // #[test]
+//     // fn allocating_entry_sets_first_taken_to_first_vacant() {
+//     //     let mut heap = Heap::new();
+//     //     let first_vacant = heap.first_vacant.clone();
+//     //     heap.allocate(runtime::List::new());
+//     //     assert_eq!(first_vacant, heap.first_taken);
+//     // }
 
-    #[test]
-    fn allocating_last_vacant_entry_in_heap_sets_vacant_entry_to_none() {
-        let mut heap = Heap::new();
-        heap.allocate(runtime::List::new());
-        assert_eq!(heap.first_vacant, None);
-    }
+//     // #[test]
+//     // fn allocating_last_vacant_entry_in_heap_sets_vacant_entry_to_none() {
+//     //     let mut heap = Heap::new();
+//     //     heap.allocate(runtime::List::new());
+//     //     assert_eq!(heap.first_vacant, None);
+//     // }
 
-    #[test]
-    fn allocating_with_multiple_vacant_entries_moves_vacant_entry_to_the_next() {
-        let mut heap = Heap::with_capacity(10);
-        let next_vacant = heap.entries[heap.first_vacant.unwrap()].header.next_node;
-        heap.allocate(runtime::List::new());
-        assert_eq!(heap.first_vacant, next_vacant);
-    }
+//     // #[test]
+//     // fn allocating_with_multiple_vacant_entries_moves_vacant_entry_to_the_next() {
+//     //     let mut heap = Heap::with_capacity(10);
+//     //     let next_vacant = heap.entries[heap.first_vacant.unwrap()].header.next_node;
+//     //     heap.allocate(runtime::List::new());
+//     //     assert_eq!(heap.first_vacant, next_vacant);
+//     // }
 
-    #[test]
-    fn first_allocated_heap_entry_has_next_node_as_none() {
-        let mut heap = Heap::with_capacity(10);
-        let ptr = heap.allocate(runtime::List::new());
-        assert_eq!(heap.entries[ptr.entry_index].header.next_node, None);
-    }
-
-
-
-    // TODO: expected Box<[u8]> instead of Box<()>
-    // #[test]
-    // fn second_allocated_entry_does_not_change_the_data_of_the_first_entry() {
-    //     let mut heap = Heap::with_capacity(10);
-    //     let mut val1 = runtime::List::new();
-    //     val1.data.push(RuntimeVal::NumberVal(2.0));
-
-    //     let ptr1 = heap.allocate(val1);
-
-    //     let entry1_data = (&heap.entries[ptr1.entry_index])
-    //         .data
-    //         .as_ref()
-    //         .unwrap()
-    //         .to_vec();
-    //     let entry1_header = (&heap.entries[ptr1.entry_index]).header.clone();
-
-    //     let ptr2 = heap.allocate(runtime::List::new());
-
-    //     let entry2_data = (&heap.entries[ptr2.entry_index])
-    //         .data
-    //         .as_ref()
-    //         .unwrap()
-    //         .to_vec();
-    //     let entry2_header = (&heap.entries[ptr2.entry_index]).header.clone();
-
-    //     let entry1_new_data = (&heap.entries[ptr1.entry_index])
-    //         .data
-    //         .as_ref()
-    //         .unwrap()
-    //         .to_vec();
-    //     let entry1_new_header = (&heap.entries[ptr1.entry_index]).header.clone();
-
-    //     assert_eq!(entry1_data, entry1_new_data);
-    //     assert_eq!(entry1_header, entry1_new_header);
-    //     assert_ne!(entry2_data, entry1_data);
-    //     assert_ne!(entry2_header, entry1_header);
-    // }
-
-    #[test]
-    fn second_allocated_entry_points_to_the_first_entry() {
-        let mut heap = Heap::with_capacity(10);
-        let ptr1 = heap.allocate(runtime::List::new());
-        let ptr2 = heap.allocate(runtime::List::new());
-        assert_eq!(
-            heap.entries[ptr2.entry_index].header.next_node.unwrap(),
-            ptr1.entry_index
-        );
-    }
+//     // #[test]
+//     // fn first_allocated_heap_entry_has_next_node_as_none() {
+//     //     let mut heap = Heap::with_capacity(10);
+//     //     let ptr = heap.allocate(runtime::List::new());
+//     //     assert_eq!(heap.entries[ptr.entry_index].header.next_node, None);
+//     // }
 
 
-    // TODO: expected Box<[u8]> instead of Box<()>
-    // #[test]
-    // fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
-    //     let mut heap = Heap::with_capacity(10);
-    //     let mut ptr1 = heap.allocate(runtime::List::new());
-    //     unsafe { ptr1.data.as_mut().data.push(RuntimeVal::NumberVal(2.0)) }
-    //     let data_ref = *(&heap.entries[ptr1.entry_index]
-    //         .data
-    //         .as_ref()
-    //         .unwrap()
-    //         .as_ptr());
-    //     let data_ref = data_ref as *const runtime::List;
-    //     let data_ref = unsafe { data_ref.as_ref().unwrap() };
-    //     let heap_entry_val = match data_ref.data[0] {
-    //         RuntimeVal::NumberVal(x) => x,
-    //         _ => panic!("that should not happen"),
-    //     };
-    //     assert_eq!(data_ref.data.len(), 1);
-    //     assert_eq!(heap_entry_val, 2.0)
-    // }
 
-    #[test]
-    fn cloned_gc_pointers_point_to_the_same_data() {
-        let mut heap = Heap::with_capacity(10);
-        let ptr1 = heap.allocate(runtime::List::new());
-        let ptr2 = ptr1.clone();
-        assert_eq!(ptr1.entry_index, ptr2.entry_index);
-        assert_eq!(ptr1.data.as_ptr(), ptr2.data.as_ptr());
-    }
+//     // TODO: expected Box<[u8]> instead of Box<()>
+//     // #[test]
+//     // fn second_allocated_entry_does_not_change_the_data_of_the_first_entry() {
+//     //     let mut heap = Heap::with_capacity(10);
+//     //     let mut val1 = runtime::List::new();
+//     //     val1.data.push(RuntimeVal::NumberVal(2.0));
 
-    #[test]
-    fn heap_size_at_lest_doubles_after_allocating_on_full_heap() {
-        const INITIAL_HEAP_CAPACITY: usize = 10;
-        let mut heap = Heap::with_capacity(INITIAL_HEAP_CAPACITY);
-        for _ in 0..=INITIAL_HEAP_CAPACITY {
-            heap.allocate(runtime::List::new());
-        }
-        assert!(heap.entries.len() >= INITIAL_HEAP_CAPACITY * 2);
-    }
-    #[test]
-    fn full_heap_after_growing_has_vacant_entries() {
-        // we need to have at least capacity 2 for this test to work
-        // as capacity 1 heap could frow to 2 in allocation and immediately
-        // take the only vacant entry, or it could grow more as `reserve` on `Vec`
-        // can give us more if it wants to.
-        let mut heap = Heap::with_capacity(2);
-        heap.allocate(runtime::List::new());
-        heap.allocate(runtime::List::new());
-        heap.allocate(runtime::List::new());
-        assert_eq!(heap.first_vacant.unwrap(), heap.entries.len() - 2);
-    }
+//     //     let ptr1 = heap.allocate(val1);
 
-    // TODO: expected Box<[u8]> instead of Box<()>
-    // #[test]
-    // fn full_heap_after_growing_does_not_invalidate_pointers() {
-    //     let mut heap = Heap::with_capacity(1);
-    //     let mut ptr = heap.allocate(runtime::List::new());
-    //     heap.allocate(runtime::String::new());
-    //     unsafe { ptr.data.as_mut().data.push(RuntimeVal::NumberVal(10.0)) };
-    //     let data_ref = *(&heap.entries[ptr.entry_index]
-    //         .data
-    //         .as_ref()
-    //         .unwrap()
-    //         .as_ptr());
-    //     let data_ref = data_ref as *const runtime::List;
-    //     let data_ref = unsafe { data_ref.as_ref().unwrap() };
-    //     let heap_entry_val = match data_ref.data[0] {
-    //         RuntimeVal::NumberVal(x) => x,
-    //         _ => panic!("that should not happen"),
-    //     };
-    //     assert_eq!(data_ref.data.len(), 1);
-    //     assert_eq!(heap_entry_val, 10.0);
-    // }
+//     //     let entry1_data = (&heap.entries[ptr1.entry_index])
+//     //         .data
+//     //         .as_ref()
+//     //         .unwrap()
+//     //         .to_vec();
+//     //     let entry1_header = (&heap.entries[ptr1.entry_index]).header.clone();
 
-    #[test]
-    fn heap_allocation_preserves_data() {
-        let mut heap = Heap::new();
-        let ptr = heap.allocate("Hello".to_string());
-        assert_eq!(
-            unsafe { ptr.data.as_ref() },
-            "Hello"
-        )
-    }
-}
+//     //     let ptr2 = heap.allocate(runtime::List::new());
+
+//     //     let entry2_data = (&heap.entries[ptr2.entry_index])
+//     //         .data
+//     //         .as_ref()
+//     //         .unwrap()
+//     //         .to_vec();
+//     //     let entry2_header = (&heap.entries[ptr2.entry_index]).header.clone();
+
+//     //     let entry1_new_data = (&heap.entries[ptr1.entry_index])
+//     //         .data
+//     //         .as_ref()
+//     //         .unwrap()
+//     //         .to_vec();
+//     //     let entry1_new_header = (&heap.entries[ptr1.entry_index]).header.clone();
+
+//     //     assert_eq!(entry1_data, entry1_new_data);
+//     //     assert_eq!(entry1_header, entry1_new_header);
+//     //     assert_ne!(entry2_data, entry1_data);
+//     //     assert_ne!(entry2_header, entry1_header);
+//     // }
+
+//     #[test]
+//     fn second_allocated_entry_points_to_the_first_entry() {
+//         let mut heap = Heap::with_capacity(10);
+//         let ptr1 = heap.allocate(runtime::List::new());
+//         let ptr2 = heap.allocate(runtime::List::new());
+//         assert_eq!(
+//             heap.entries[ptr2.entry_index].header.next_node.unwrap(),
+//             ptr1.entry_index
+//         );
+//     }
+
+
+//     // TODO: expected Box<[u8]> instead of Box<()>
+//     // #[test]
+//     // fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
+//     //     let mut heap = Heap::with_capacity(10);
+//     //     let mut ptr1 = heap.allocate(runtime::List::new());
+//     //     unsafe { ptr1.data.as_mut().data.push(RuntimeVal::NumberVal(2.0)) }
+//     //     let data_ref = *(&heap.entries[ptr1.entry_index]
+//     //         .data
+//     //         .as_ref()
+//     //         .unwrap()
+//     //         .as_ptr());
+//     //     let data_ref = data_ref as *const runtime::List;
+//     //     let data_ref = unsafe { data_ref.as_ref().unwrap() };
+//     //     let heap_entry_val = match data_ref.data[0] {
+//     //         RuntimeVal::NumberVal(x) => x,
+//     //         _ => panic!("that should not happen"),
+//     //     };
+//     //     assert_eq!(data_ref.data.len(), 1);
+//     //     assert_eq!(heap_entry_val, 2.0)
+//     // }
+
+//     #[test]
+//     fn cloned_gc_pointers_point_to_the_same_data() {
+//         let mut heap = Heap::with_capacity(10);
+//         let ptr1 = heap.allocate(runtime::List::new());
+//         let ptr2 = ptr1.clone();
+//         assert_eq!(ptr1.entry_index, ptr2.entry_index);
+//         assert_eq!(ptr1.data.as_ptr(), ptr2.data.as_ptr());
+//     }
+
+//     #[test]
+//     fn heap_size_at_lest_doubles_after_allocating_on_full_heap() {
+//         const INITIAL_HEAP_CAPACITY: usize = 10;
+//         let mut heap = Heap::with_capacity(INITIAL_HEAP_CAPACITY);
+//         for _ in 0..=INITIAL_HEAP_CAPACITY {
+//             heap.allocate(runtime::List::new());
+//         }
+//         assert!(heap.entries.len() >= INITIAL_HEAP_CAPACITY * 2);
+//     }
+//     #[test]
+//     fn full_heap_after_growing_has_vacant_entries() {
+//         // we need to have at least capacity 2 for this test to work
+//         // as capacity 1 heap could frow to 2 in allocation and immediately
+//         // take the only vacant entry, or it could grow more as `reserve` on `Vec`
+//         // can give us more if it wants to.
+//         let mut heap = Heap::with_capacity(2);
+//         heap.allocate(runtime::List::new());
+//         heap.allocate(runtime::List::new());
+//         heap.allocate(runtime::List::new());
+//         assert_eq!(heap.first_vacant.unwrap(), heap.entries.len() - 2);
+//     }
+
+//     // TODO: expected Box<[u8]> instead of Box<()>
+//     // #[test]
+//     // fn full_heap_after_growing_does_not_invalidate_pointers() {
+//     //     let mut heap = Heap::with_capacity(1);
+//     //     let mut ptr = heap.allocate(runtime::List::new());
+//     //     heap.allocate(runtime::String::new());
+//     //     unsafe { ptr.data.as_mut().data.push(RuntimeVal::NumberVal(10.0)) };
+//     //     let data_ref = *(&heap.entries[ptr.entry_index]
+//     //         .data
+//     //         .as_ref()
+//     //         .unwrap()
+//     //         .as_ptr());
+//     //     let data_ref = data_ref as *const runtime::List;
+//     //     let data_ref = unsafe { data_ref.as_ref().unwrap() };
+//     //     let heap_entry_val = match data_ref.data[0] {
+//     //         RuntimeVal::NumberVal(x) => x,
+//     //         _ => panic!("that should not happen"),
+//     //     };
+//     //     assert_eq!(data_ref.data.len(), 1);
+//     //     assert_eq!(heap_entry_val, 10.0);
+//     // }
+
+//     #[test]
+//     fn heap_allocation_preserves_data() {
+//         let mut heap = Heap::new();
+//         let ptr = heap.allocate("Hello".to_string());
+//         assert_eq!(
+//             unsafe { ptr.data.as_ref() },
+//             "Hello"
+//         )
+//     }
+// }
