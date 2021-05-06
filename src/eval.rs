@@ -1,7 +1,9 @@
 use core::panic;
 use std::convert::TryInto;
 
-use crate::data::{BuiltinSymbols, Environment, RuntimeVal, SExpr, SymbolId, SymbolTable};
+use crate::data::{BuiltinSymbols, Environment, SExpr, SymbolId, SymbolTable};
+use crate::gc::Heap;
+use crate::runtime::RuntimeVal;
 
 type Env = Environment;
 
@@ -11,6 +13,7 @@ type Env = Environment;
 // When  we call a function we should only create a new env with global env as a parent
 
 pub fn eval(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -18,9 +21,9 @@ pub fn eval(
 ) -> RuntimeVal {
     match expr {
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
-        SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
+        SExpr::LitString(val) => RuntimeVal::string(val.clone(), heap),
         SExpr::Symbol(val) => eval_symbol(globals, locals, symbols, *val),
-        SExpr::List(val) => eval_list(globals, locals, symbols, val),
+        SExpr::List(val) => eval_list(heap, globals, locals, symbols, val),
     }
 }
 
@@ -51,26 +54,28 @@ fn eval_symbol(
 }
 
 fn eval_list(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
     if vals.is_empty() {
-        return RuntimeVal::nil();
+        return RuntimeVal::nil(heap);
     }
-    if let Ok(val) = try_eval_special_form(globals.clone(), locals.clone(), symbols, vals) {
+    if let Ok(val) = try_eval_special_form(heap, globals.clone(), locals.clone(), symbols, vals) {
         return val;
     }
     let mut evaled: Vec<RuntimeVal> = vals
         .iter()
-        .map(|expr| eval(globals.clone(), locals.clone(), symbols, expr))
+        .map(|expr| eval(heap, globals.clone(), locals.clone(), symbols, expr))
         .collect();
     let func = evaled.remove(0);
-    call(globals, symbols, &func, evaled)
+    call(heap, globals, symbols, &func, evaled)
 }
 
 pub fn call(
+    heap: &mut Heap,
     globals: Env,
     symbols: &mut SymbolTable,
     func: &RuntimeVal,
@@ -78,8 +83,9 @@ pub fn call(
 ) -> RuntimeVal {
     match func {
         RuntimeVal::Func(func) => {
+            let func = unsafe { func.data.as_ref() };
             let func_env = func_call_env(&func.args, args);
-            eval(globals, Some(func_env), symbols, &func.body)
+            eval(heap, globals, Some(func_env), symbols, &func.body)
         }
         RuntimeVal::Lambda(lambda_ref) => {
             // lambda can mutably change its environment (not now but at some point)
@@ -87,11 +93,18 @@ pub fn call(
             // A: Yes, however normal function does not carry the globals inside its structure
             //    while lambda does carry its env with it. So normal function doesn't change itself
             //    while lambda can.
-            let lambda = lambda_ref.borrow_mut();
+            let mut lambda_ref = lambda_ref.clone();
+            let lambda = unsafe {
+                // Note that this is safe. The lambda is immutable reference and by doing
+                // clone we can borrow as mutable because of inner mutability.
+                // This is fine because we modify runtime values on the heap and no
+                // internal rust interpreter structs.
+                lambda_ref.data.as_mut()
+            };
             let func_env = func_call_env_with_parent(&lambda.args, args, lambda.env.clone());
-            eval(globals, Some(func_env), symbols, &lambda.body)
+            eval(heap, globals, Some(func_env), symbols, &lambda.body)
         }
-        RuntimeVal::NativeFunc(func) => func(globals, symbols, args),
+        RuntimeVal::NativeFunc(func) => func(heap, globals, symbols, args),
         _ => panic!("first symbol of a list should refer to a function"),
     }
 }
@@ -124,6 +137,7 @@ fn populate_env(mut env: Environment, args: &[SymbolId], values: Vec<RuntimeVal>
 struct NotSpecialForm;
 
 fn try_eval_special_form(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -131,12 +145,14 @@ fn try_eval_special_form(
 ) -> Result<RuntimeVal, NotSpecialForm> {
     match &vals[0] {
         SExpr::Symbol(symbol) => match (*symbol).try_into() {
-            Ok(BuiltinSymbols::Define) => Ok(eval_define(globals, locals, symbols, vals)),
-            Ok(BuiltinSymbols::Begin) => Ok(eval_begin(globals, locals, symbols, vals)),
-            Ok(BuiltinSymbols::Quote) => Ok(eval_quote(globals, locals, vals)),
-            Ok(BuiltinSymbols::Quasiquote) => Ok(eval_quasiquote(globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Define) => Ok(eval_define(heap, globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Begin) => Ok(eval_begin(heap, globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Quote) => Ok(eval_quote(heap, globals, locals, vals)),
+            Ok(BuiltinSymbols::Quasiquote) => {
+                Ok(eval_quasiquote(heap, globals, locals, symbols, vals))
+            }
             Ok(BuiltinSymbols::Unquote) => panic!("Unquote in not quasiquoted context"),
-            Ok(BuiltinSymbols::Lambda) => Ok(eval_lambda(globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Lambda) => Ok(eval_lambda(heap, globals, locals, symbols, vals)),
             _ => Err(NotSpecialForm),
         },
         _ => Err(NotSpecialForm),
@@ -144,6 +160,7 @@ fn try_eval_special_form(
 }
 
 fn eval_define(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -156,21 +173,21 @@ fn eval_define(
     match &vals[..] {
         // variable define form
         [_, SExpr::Symbol(name), val] => {
-            let evaled = eval(globals.clone(), locals.clone(), symbols, val);
+            let evaled = eval(heap, globals.clone(), locals.clone(), symbols, val);
             create_env.borrow_mut().values.insert(name.clone(), evaled);
-            RuntimeVal::nil()
+            RuntimeVal::nil(heap)
         }
         // function define form
         [_, SExpr::List(inner), body @ ..] => {
             if let [SExpr::Symbol(name), args @ ..] = &inner[..] {
                 let body = prepare_function_body(body);
                 let args = collect_function_definition_arguments(args);
-                let function = RuntimeVal::function(name.clone(), args, body);
+                let function = RuntimeVal::function(name.clone(), args, body, heap);
                 create_env
                     .borrow_mut()
                     .values
                     .insert(name.clone(), function);
-                RuntimeVal::nil()
+                RuntimeVal::nil(heap)
             } else {
                 panic!("wrong function define form")
             }
@@ -180,6 +197,7 @@ fn eval_define(
 }
 
 fn eval_lambda(
+    heap: &mut Heap,
     _globals: Env,
     locals: Option<Env>,
     _symbols: &mut SymbolTable,
@@ -190,7 +208,7 @@ fn eval_lambda(
         [_, SExpr::List(args), body @ ..] => {
             let body = prepare_function_body(body);
             let args = collect_function_definition_arguments(args);
-            RuntimeVal::lambda(locals, args, body)
+            RuntimeVal::lambda(locals, args, body, heap)
         }
         _ => panic!("not a lambda form"),
     }
@@ -220,43 +238,48 @@ fn prepare_function_body(body: &[SExpr]) -> SExpr {
 }
 
 fn eval_begin(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
-    let mut res = RuntimeVal::nil();
+    let mut res = RuntimeVal::nil(heap);
     for expr in &vals[1..] {
-        res = eval(globals.clone(), locals.clone(), symbols, expr);
+        res = eval(heap, globals.clone(), locals.clone(), symbols, expr);
     }
     res
 }
 
-fn eval_quote(_: Env, _: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
+fn eval_quote(heap: &mut Heap, _: Env, _: Option<Env>, vals: &Vec<SExpr>) -> RuntimeVal {
     assert_eq!(vals.len(), 2, "you can only quote single expression");
-    quote_expr(&vals[1])
+    quote_expr(heap, &vals[1])
 }
 
-fn quote_expr(expr: &SExpr) -> RuntimeVal {
+fn quote_expr(heap: &mut Heap, expr: &SExpr) -> RuntimeVal {
     match expr {
         SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
-        SExpr::List(inner) => RuntimeVal::List(inner.iter().map(quote_expr).collect()),
+        SExpr::List(inner) => {
+            RuntimeVal::list(inner.iter().map(|x| quote_expr(heap, x)).collect(), heap)
+        }
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
-        SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
+        SExpr::LitString(val) => RuntimeVal::string(val.clone(), heap),
     }
 }
 
 fn eval_quasiquote(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RuntimeVal {
     assert_eq!(vals.len(), 2, "you can only quote single expression");
-    quasiquote_expr(globals, locals, symbols, &vals[1])
+    quasiquote_expr(heap, globals, locals, symbols, &vals[1])
 }
 
 fn quasiquote_expr(
+    heap: &mut Heap,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -265,21 +288,22 @@ fn quasiquote_expr(
     match expr {
         SExpr::Symbol(val) => RuntimeVal::Symbol(val.clone()),
         SExpr::LitNumber(val) => RuntimeVal::NumberVal(*val),
-        SExpr::LitString(val) => RuntimeVal::StringVal(val.clone()),
+        SExpr::LitString(val) => RuntimeVal::string(val.clone(), heap),
         SExpr::List(inner) if inner.len() > 0 => {
             if let SExpr::Symbol(val) = &inner[0] {
                 if *val == BuiltinSymbols::Unquote as SymbolId {
                     assert_eq!(inner.len(), 2, "You can only unquote single expression");
-                    return eval(globals, locals, symbols, &inner[1]);
+                    return eval(heap, globals, locals, symbols, &inner[1]);
                 }
             }
-            RuntimeVal::List(
+            RuntimeVal::list(
                 inner
                     .iter()
-                    .map(|val| quasiquote_expr(globals.clone(), locals.clone(), symbols, val))
+                    .map(|val| quasiquote_expr(heap, globals.clone(), locals.clone(), symbols, val))
                     .collect(),
+                heap,
             )
         }
-        SExpr::List(_) => RuntimeVal::List(Vec::new()),
+        SExpr::List(_) => RuntimeVal::nil(heap),
     }
 }

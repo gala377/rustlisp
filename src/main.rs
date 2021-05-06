@@ -1,6 +1,6 @@
 use std::env;
 
-use lispylib;
+use lispylib::{self, gc::Heap};
 
 fn get_file_name(args: Vec<String>) -> String {
     match args.len() {
@@ -20,8 +20,9 @@ fn main() -> Result<(), lispylib::ParseError> {
     print!("\n\n\n");
     let env = lispylib::stdlib::std_env(&mut symbol_table_builder);
     let mut symbol_table = symbol_table_builder.build();
+    let mut heap = Heap::with_capacity(1000);
     for expr in &program {
-        lispylib::eval(env.clone(), None, &mut symbol_table, expr);
+        lispylib::eval(&mut heap, env.clone(), None, &mut symbol_table, expr);
     }
     Ok(())
 }

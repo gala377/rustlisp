@@ -27,7 +27,7 @@ pub fn print_sexpr_impl(expr: &SExpr, symbols: &SymbolTable, depth: usize) {
     }
 }
 
-pub fn concatenate_vectors<T>(mut a: Vec<T>, mut b: Vec<T>) -> Vec<T> {
-    a.append(&mut b);
+pub fn accumulate_vectors<T: Clone>(mut a: Vec<T>, b: &Vec<T>) -> Vec<T> {
+    a.extend_from_slice(&b);
     a
 }
