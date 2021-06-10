@@ -1,9 +1,9 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, mem::ManuallyDrop};
 
 use crate::{
     data::{Environment, SymbolId, SymbolTable, SymbolTableBuilder},
     eval,
-    gc::{Heap, Root},
+    gc::{Heap, MarkSweep, Root},
     reader::{self, AST},
     runtime::{drop_rooted_vec, RootedVal, WeakVal},
     stdlib,
@@ -37,7 +37,7 @@ fn define_prelude_functions(
     use RootedVal::*;
     def_functions!(map, symbol_table, {
         // Generic functions
-        "eq?" => |heap, _, _, args| {
+        "eq?" => |heap, _, _, _, args| {
             let res = match &args[..] {
                 [Symbol(a), Symbol(b)] => RootedVal::predicate(a == b),
                 [StringVal(a), StringVal(b)] => RootedVal::predicate(unsafe {a.data.get().as_ref()} ==  unsafe { b.data.get().as_ref()}),
@@ -49,14 +49,14 @@ fn define_prelude_functions(
             drop_rooted_vec(heap, args);
             res
         },
-        "repr" => |heap, _, sym, args| {
+        "repr" => |heap, _, _, sym, args| {
             assert!(args.len() == 1);
             let res = RootedVal::string(args[0].repr(sym), heap);
             drop_rooted_vec(heap, args);
             res
         },
         "+" => plus,
-        "to-str" => |heap, _, sym, args| {
+        "to-str" => |heap, _, _, sym, args| {
             assert!(args.len() == 1, "function str accepts only one parameter");
             let res =RootedVal::string(args[0].str(sym), heap);
             drop_rooted_vec(heap, args);
@@ -64,17 +64,17 @@ fn define_prelude_functions(
         },
 
         // functions
-        "apply" => |heap, env, sym, mut args: Vec<RootedVal>| {
+        "apply" => |heap, gc, env, sym, mut args: Vec<RootedVal>| {
             assert!(!args.is_empty(), "Cannot apply nothing");
             let func = args.remove(0);
-            let res = eval::call(heap, env, sym, &func, args);
+            let res = eval::call(heap, gc, env, sym, &func, args);
             func.heap_drop(heap);
             res
         },
 
         // lists
-        "list" => |heap, _, _, args| RootedVal::list_from_rooted(args, heap),
-        "null?" => |heap, _, _, args| {
+        "list" => |heap, _, _,  _, args| RootedVal::list_from_rooted(args, heap),
+        "null?" => |heap, _, _, _, args| {
             assert_eq!(args.len(), 1, "null takes one argument");
             let res = if let List(inner) = &args[0] {
                 RootedVal::predicate(unsafe { inner.data.get().as_ref().is_empty() } )
@@ -84,7 +84,7 @@ fn define_prelude_functions(
             drop_rooted_vec(heap, args);
             res
         },
-        "list?" => |heap, _, _, args| {
+        "list?" => |heap, _, _, _, args| {
             assert_eq!(args.len(), 1, "list? takes one argument");
             let res = if let List(_) = &args[0] {
                 RootedVal::sym_true()
@@ -94,14 +94,14 @@ fn define_prelude_functions(
             drop_rooted_vec(heap, args);
             res
         },
-        "map" => |heap, env, sym, mut args| {
+        "map" => |heap, gc, env, sym, mut args| {
             assert_eq!(args.len(), 2, "you have to map function onto a list");
             let (list, func) = (args.pop().unwrap(), args.pop().unwrap());
             let res = if let List(list) = list {
                 let res = unsafe { list.data.get().as_ref() }.iter()
                     .map(|x| {
                         let args = vec![x.clone().upgrade(heap)];
-                        eval::call(heap, env.clone(), sym, &func, args)
+                        eval::call(heap, gc, env.clone(), sym, &func, args)
                 }).collect();
                 heap.drop_root(list);
                 RootedVal::list_from_rooted(res, heap)
@@ -113,14 +113,14 @@ fn define_prelude_functions(
         },
 
         // io
-        "print" => |heap, _, sym, args| {
+        "print" => |heap, _, _, sym, args| {
             args.into_iter().for_each(|x| {
                 println!("{}", x.str(sym));
                 x.heap_drop(heap);
             });
             RootedVal::nil(heap)
         },
-        "read-line" => |heap, _, _, args| {
+        "read-line" => |heap, _, _, _, args| {
             assert!(args.is_empty(), "read-line takes 0 arguments");
             let mut input = String::new();
             std::io::stdin().read_line(&mut input).unwrap();
@@ -130,7 +130,13 @@ fn define_prelude_functions(
     });
 }
 
-fn plus(heap: &mut Heap, env: Environment, _: &mut SymbolTable, args: Vec<RootedVal>) -> RootedVal {
+fn plus(
+    heap: &mut Heap,
+    _gc: &mut MarkSweep,
+    env: Environment,
+    _: &mut SymbolTable,
+    args: Vec<RootedVal>,
+) -> RootedVal {
     assert!(args.len() > 1, "Cannot add less than 2 values");
     match &args[0] {
         RootedVal::List(_) => concatenate_lists(heap, env, args),
@@ -142,6 +148,7 @@ fn plus(heap: &mut Heap, env: Environment, _: &mut SymbolTable, args: Vec<Rooted
 
 fn load_from_file(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     mut env: Environment,
     symbols: &mut SymbolTable,
     mut args: Vec<RootedVal>,
@@ -183,8 +190,14 @@ fn load_from_file(
             } = reader::load(&file_source, symbol_table_builder).unwrap();
             let file_env = stdlib::std_env(&mut symbol_table_builder);
             symbol_table_builder.update_table(symbols);
+            // TODO: there are 2 problems here
+            // 1st: Functions need to know its global, otherwise they are kinda dynamicly scoped
+            // which sucks ass.
+            // 2nd: We dont retain information about original global which means that
+            // on first gc step we remove all functions and symbols defined in original global env
+            // and we have some nice juicy UB everywhere.
             program.into_iter().for_each(|expr| {
-                let res = eval::eval(heap, file_env.clone(), None, symbols, &expr);
+                let res = eval::eval(heap, gc, file_env.clone(), None, symbols, &expr);
                 res.heap_drop(heap);
             });
             env.update_with(file_env);
@@ -206,12 +219,12 @@ fn add_numbers(_: &mut Heap, _: Environment, args: Vec<RootedVal>) -> RootedVal 
 fn concatenate_strings(heap: &mut Heap, _: Environment, args: Vec<RootedVal>) -> RootedVal {
     RootedVal::string(
         args.into_iter().fold(String::new(), |acc, x| match x {
-            RootedVal::StringVal(inner) => {
-                let res = acc + unsafe { inner.data.get().as_ref() };
-                heap.drop_root(inner);
-                res
-            }
-            _ => panic!("Types mismatched"),
+                RootedVal::StringVal(inner) => {
+                    let res = acc + unsafe { inner.data.get().as_ref() };
+                    heap.drop_root(inner);
+                    res
+                }
+                _ => panic!("Types mismatched"),
         }),
         heap,
     )

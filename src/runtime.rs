@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use crate::data::BuiltinSymbols;
 use crate::gc;
+use crate::gc::MarkSweep;
 use crate::{
     data::{Environment, SExpr, SymbolId, SymbolTable},
     gc::{Allocable, Heap, Root, TypeTag},
@@ -39,8 +40,9 @@ impl RuntimeFunc {
     }
 }
 
-pub type NativeFunc =
-    Rc<dyn Fn(&mut Heap, Environment, &mut SymbolTable, Vec<RootedVal>) -> RootedVal>;
+pub type NativeFunc = Rc<
+    dyn Fn(&mut Heap, &mut MarkSweep, Environment, &mut SymbolTable, Vec<RootedVal>) -> RootedVal,
+>;
 
 impl<F> Allocable for F
 where
@@ -183,7 +185,14 @@ impl RootedVal {
 
     pub fn native_function<Func>(func: Func) -> RootedVal
     where
-        Func: 'static + Fn(&mut Heap, Environment, &mut SymbolTable, Vec<RootedVal>) -> RootedVal,
+        Func: 'static
+            + Fn(
+                &mut Heap,
+                &mut MarkSweep,
+                Environment,
+                &mut SymbolTable,
+                Vec<RootedVal>,
+            ) -> RootedVal,
     {
         RootedVal::NativeFunc(Rc::new(func))
     }
@@ -253,7 +262,14 @@ impl WeakVal {
 
     pub fn native_function<Func>(func: Func) -> WeakVal
     where
-        Func: 'static + Fn(&mut Heap, Environment, &mut SymbolTable, Vec<RootedVal>) -> RootedVal,
+        Func: 'static
+            + Fn(
+                &mut Heap,
+                &mut MarkSweep,
+                Environment,
+                &mut SymbolTable,
+                Vec<RootedVal>,
+            ) -> RootedVal,
     {
         Self::NativeFunc(Rc::new(func))
     }

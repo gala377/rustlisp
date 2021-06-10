@@ -134,6 +134,7 @@ unsafe fn safe_drop_and_free<T>(ptr: *mut ()) {
 
 impl Drop for HeapEntry {
     fn drop(&mut self) {
+        assert!(self.header.strong_count == 0);
         unsafe { self.drop_data_unchecked() }
     }
 }
@@ -339,7 +340,6 @@ impl Heap {
 
     fn decrement_strong_count(&mut self, entry_index: usize) {
         self.with_header(entry_index, |header| header.strong_count -= 1);
-        debug_assert!(self.entries[entry_index].header.strong_count >= 0);
     }
 
     fn with_header<F: Fn(&mut Header) -> ()>(&mut self, entry_index: usize, func: F) {
@@ -355,7 +355,7 @@ impl MarkSweep {
         Self
     }
 
-    pub fn step(&mut self, heap: &mut Heap, _globals: Environment, _locals: Option<Environment>) {
+    pub fn step(&mut self, heap: &mut Heap, globals: Environment, locals: Option<Environment>) {
         if heap.taken_entries == 0 {
             return;
         }
@@ -381,10 +381,20 @@ impl MarkSweep {
         // is rooted when it starts?
         // Maybe we need explicit stack for temporaries just so
         // we won't deallocate them
-        let marked = self.traverse_and_mark(heap);
+        let mut marked = self.traverse_and_mark(heap);
+        if let Some(locals) = locals {
+            self.visit_env(&mut marked, heap, locals);
+        }
+        self.visit_env(&mut marked, heap, globals);
         heap.taken_entries = marked.len();
         heap.vacant_entries = heap.entries.len() - marked.len();
         self.sweep(heap);
+        
+        let mut curr = heap.first_taken;
+        while let Some(entry_index) = curr {
+            heap.entries[entry_index].header.marked = false;
+            curr = heap.entries[entry_index].header.next_node;
+        }
     }
 
     fn traverse_and_mark(&self, heap: &mut Heap) -> BTreeSet<usize> {
@@ -403,9 +413,9 @@ impl MarkSweep {
         if marked.contains(&entry_index) {
             return;
         }
+        marked.insert(entry_index);
         let header = &mut heap.entries[entry_index].header;
         header.marked = true;
-        marked.insert(entry_index);
         let walk_function = match header.tag {
             TypeTag::List => Self::visit_list,
             TypeTag::Lambda => Self::visit_lambda,
@@ -419,11 +429,11 @@ impl MarkSweep {
     }
 
     fn visit_list(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
-        let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<RootedVal>;
+        let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<WeakVal>;
         let list_ref = unsafe { list_ref.as_ref().unwrap() };
         list_ref
             .iter()
-            .for_each(|val| self.visit_runtime_val(marked, heap, val));
+            .for_each(|val| self.visit_weak_val(marked, heap, val));
     }
 
     fn visit_lambda(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
@@ -447,19 +457,6 @@ impl MarkSweep {
         }
     }
 
-    fn visit_runtime_val(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, val: &RootedVal) {
-        use RootedVal::*;
-        match val {
-            Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            List(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            // We don't use catch all here so if we add any other type this
-            // will stop compiling and its a good thing
-            NumberVal(_) | Symbol(_) | NativeFunc(_) => (),
-        }
-    }
-
     fn visit_weak_val(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, val: &WeakVal) {
         use WeakVal::*;
         match val {
@@ -474,7 +471,6 @@ impl MarkSweep {
     }
 
     fn sweep(&mut self, heap: &mut Heap) {
-        // todo: remove from the head
         let curr = match self.free_from_head(heap) {
             None => return,
             Some(curr) => curr,
@@ -679,7 +675,6 @@ mod tests {
         heap.drop_root(ptr3);
     }
 
-
     #[test]
     fn full_heap_after_growing_does_not_invalidate_pointers() {
         let mut heap = Heap::with_capacity(1);
@@ -707,9 +702,7 @@ mod tests {
     fn heap_allocation_preserves_data() {
         let mut heap = Heap::new();
         let ptr = heap.allocate("Hello".to_string());
-        assert_eq!(unsafe {
-            ptr.data.get().as_ref().clone()
-        }, "Hello");
+        assert_eq!(unsafe { ptr.data.get().as_ref().clone() }, "Hello");
         heap.drop_root(ptr);
     }
 }

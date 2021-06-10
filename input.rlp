@@ -1,19 +1,22 @@
 (print "start of module")
 
 (def dont-rewrite "pls dont change")
-(def (my-func x) (print x))
+(def (my-func x) 
+	(print "hello?")
+	(print (repr x)))
 
 (print "Okay this is a main file, now I load")
 
 (load "check_load.rlp")
 
 (print "after load")
-
+(print "i am here")
+(my-func "hello???")
 (my-func CONST-VAL)
 (print dont-rewrite)
 (exported "is it working?")
 
 (print "Checking overloading?")
 (print (+ "Expected: REWRITTEN " "got: " (using-old-rewrite)))
-
+(print (+ "this crashes?" this-crashes))
 (print "ending main module")

@@ -2,18 +2,18 @@ use core::panic;
 use std::convert::TryInto;
 
 use crate::data::{BuiltinSymbols, Environment, SExpr, SymbolId, SymbolTable};
-use crate::gc::Heap;
-use crate::runtime::{RootedVal, drop_rooted_vec};
+use crate::gc::{Heap, MarkSweep};
+use crate::runtime::{drop_rooted_vec, RootedVal};
+use crate::utils::print_sexpr_impl;
 
 type Env = Environment;
 
-// todo:
-// There are no lambdas yet.
-// There is a problem with dynamic scoping which we do not want.
-// When  we call a function we should only create a new env with global env as a parent
+
+
 
 pub fn eval(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -23,7 +23,7 @@ pub fn eval(
         SExpr::LitNumber(val) => RootedVal::NumberVal(*val),
         SExpr::LitString(val) => RootedVal::string(val.clone(), heap),
         SExpr::Symbol(val) => eval_symbol(heap, globals, locals, symbols, *val),
-        SExpr::List(val) => eval_list(heap, globals, locals, symbols, val),
+        SExpr::List(val) => eval_list(heap, gc, globals, locals, symbols, val),
     }
 }
 
@@ -57,6 +57,7 @@ fn eval_symbol(
 
 fn eval_list(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -65,42 +66,49 @@ fn eval_list(
     if vals.is_empty() {
         return RootedVal::nil(heap);
     }
-    if let Ok(val) = try_eval_special_form(heap, globals.clone(), locals.clone(), symbols, vals) {
+    if let Ok(val) = try_eval_special_form(heap, gc, globals.clone(), locals.clone(), symbols, vals)
+    {
         return val;
     }
     let mut evaled: Vec<RootedVal> = vals
         .iter()
-        .map(|expr| eval(heap, globals.clone(), locals.clone(), symbols, expr))
+        .map(|expr| eval(heap, gc, globals.clone(), locals.clone(), symbols, expr))
         .collect();
     let func = evaled.remove(0);
-    let res = call(heap, globals, symbols, &func, evaled);
+    let res = call(heap, gc, globals, symbols, &func, evaled);
     func.heap_drop(heap);
     res
 }
 
 pub fn call(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     symbols: &mut SymbolTable,
     func: &RootedVal,
     args: Vec<RootedVal>,
 ) -> RootedVal {
-    match func {
+    let globals_copy = globals.clone();
+    let res = match func {
         RootedVal::Func(func) => unsafe {
             let ptr = func.data.get();
             let func = ptr.as_ref();
             let func_env = func_call_env(heap, &func.args, args);
-            eval(heap, globals, Some(func_env), symbols, &func.body)
+            eval(heap, gc, globals, Some(func_env), symbols, &func.body)
         },
         RootedVal::Lambda(lambda_ref) => unsafe {
             let ptr = lambda_ref.data.get();
             let lambda = ptr.as_ref();
             let func_env = func_call_env_with_parent(heap, &lambda.args, args, lambda.env.clone());
-            eval(heap, globals, Some(func_env), symbols, &lambda.body)
+            eval(heap, gc, globals, Some(func_env), symbols, &lambda.body)
         },
-        RootedVal::NativeFunc(func) => func(heap, globals, symbols, args),
+        RootedVal::NativeFunc(func) => func(heap, gc, globals, symbols, args),
         _ => panic!("first symbol of a list should refer to a function"),
-    }
+    };
+    println!("\n------------ Running gc --------------");
+    gc.step(heap, globals_copy, None);
+    println!("-----------Gc step ended -------------\n");
+    res
 }
 
 fn func_call_env(heap: &mut Heap, args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
@@ -138,6 +146,7 @@ struct NotSpecialForm;
 
 fn try_eval_special_form(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -145,11 +154,11 @@ fn try_eval_special_form(
 ) -> Result<RootedVal, NotSpecialForm> {
     match &vals[0] {
         SExpr::Symbol(symbol) => match (*symbol).try_into() {
-            Ok(BuiltinSymbols::Define) => Ok(eval_define(heap, globals, locals, symbols, vals)),
-            Ok(BuiltinSymbols::Begin) => Ok(eval_begin(heap, globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Define) => Ok(eval_define(heap, gc, globals, locals, symbols, vals)),
+            Ok(BuiltinSymbols::Begin) => Ok(eval_begin(heap, gc, globals, locals, symbols, vals)),
             Ok(BuiltinSymbols::Quote) => Ok(eval_quote(heap, globals, locals, vals)),
             Ok(BuiltinSymbols::Quasiquote) => {
-                Ok(eval_quasiquote(heap, globals, locals, symbols, vals))
+                Ok(eval_quasiquote(heap, gc, globals, locals, symbols, vals))
             }
             Ok(BuiltinSymbols::Unquote) => panic!("Unquote in not quasiquoted context"),
             Ok(BuiltinSymbols::Lambda) => Ok(eval_lambda(heap, globals, locals, symbols, vals)),
@@ -161,6 +170,7 @@ fn try_eval_special_form(
 
 fn eval_define(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -173,7 +183,7 @@ fn eval_define(
     match &vals[..] {
         // variable define form
         [_, SExpr::Symbol(name), val] => {
-            let evaled = eval(heap, globals.clone(), locals.clone(), symbols, val);
+            let evaled = eval(heap, gc, globals.clone(), locals.clone(), symbols, val);
             create_env
                 .borrow_mut()
                 .values
@@ -242,6 +252,7 @@ fn prepare_function_body(body: &[SExpr]) -> SExpr {
 
 fn eval_begin(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -249,7 +260,14 @@ fn eval_begin(
 ) -> RootedVal {
     let mut allocs = Vec::new();
     for expr in &vals[1..] {
-        allocs.push(eval(heap, globals.clone(), locals.clone(), symbols, expr));
+        allocs.push(eval(
+            heap,
+            gc,
+            globals.clone(),
+            locals.clone(),
+            symbols,
+            expr,
+        ));
     }
     let res = allocs.pop().unwrap();
     drop_rooted_vec(heap, allocs);
@@ -274,17 +292,19 @@ fn quote_expr(heap: &mut Heap, expr: &SExpr) -> RootedVal {
 
 fn eval_quasiquote(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
     vals: &Vec<SExpr>,
 ) -> RootedVal {
     assert_eq!(vals.len(), 2, "you can only quote single expression");
-    quasiquote_expr(heap, globals, locals, symbols, &vals[1])
+    quasiquote_expr(heap, gc, globals, locals, symbols, &vals[1])
 }
 
 fn quasiquote_expr(
     heap: &mut Heap,
+    gc: &mut MarkSweep,
     globals: Env,
     locals: Option<Env>,
     symbols: &mut SymbolTable,
@@ -298,13 +318,15 @@ fn quasiquote_expr(
             if let SExpr::Symbol(val) = &inner[0] {
                 if *val == BuiltinSymbols::Unquote as SymbolId {
                     assert_eq!(inner.len(), 2, "You can only unquote single expression");
-                    return eval(heap, globals, locals, symbols, &inner[1]);
+                    return eval(heap, gc, globals, locals, symbols, &inner[1]);
                 }
             }
             RootedVal::list_from_rooted(
                 inner
                     .iter()
-                    .map(|val| quasiquote_expr(heap, globals.clone(), locals.clone(), symbols, val))
+                    .map(|val| {
+                        quasiquote_expr(heap, gc, globals.clone(), locals.clone(), symbols, val)
+                    })
                     .collect(),
                 heap,
             )
