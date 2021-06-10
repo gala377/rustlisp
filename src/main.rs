@@ -22,7 +22,8 @@ fn main() -> Result<(), lispylib::ParseError> {
     let mut symbol_table = symbol_table_builder.build();
     let mut heap = Heap::with_capacity(1000);
     for expr in &program {
-        lispylib::eval(&mut heap, env.clone(), None, &mut symbol_table, expr);
+        let res = lispylib::eval(&mut heap, env.clone(), None, &mut symbol_table, expr);
+        res.heap_drop(&mut heap);
     }
     Ok(())
 }

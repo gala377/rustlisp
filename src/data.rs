@@ -1,4 +1,4 @@
-use crate::runtime::RuntimeVal;
+use crate::runtime::WeakVal;
 use std::{cell::RefCell, collections::HashMap, convert::TryFrom, rc::Rc};
 
 #[derive(Clone)]
@@ -11,7 +11,7 @@ pub enum SExpr {
 
 pub struct EnvironmentImpl {
     pub parent: Option<Environment>,
-    pub values: HashMap<SymbolId, RuntimeVal>,
+    pub values: HashMap<SymbolId, WeakVal>,
 }
 
 #[derive(Clone)]

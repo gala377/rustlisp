@@ -1,7 +1,13 @@
-use std::{collections::BTreeSet, ptr};
+use std::{
+    cell::{Cell, RefCell},
+    collections::BTreeSet,
+    ptr,
+};
 
-use crate::{data::Environment, runtime::{self, Lambda, RuntimeVal}};
-
+use crate::{
+    data::Environment,
+    runtime::{self, Lambda, RootedVal, WeakVal},
+};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
@@ -12,12 +18,23 @@ pub enum TypeTag {
     None,
 }
 
-pub struct Gc<T: ?Sized> {
-    pub data: ptr::NonNull<T>,
+pub struct Root<T: ?Sized> {
+    pub data: Cell<ptr::NonNull<T>>,
     pub entry_index: usize,
 }
 
-impl<T: ?Sized> Clone for Gc<T> {
+impl<T: ?Sized> Drop for Root<T> {
+    fn drop(&mut self) {
+        panic!("Root should always be manually dropped");
+    }
+}
+
+pub struct Weak<T: ?Sized> {
+    pub data: Cell<ptr::NonNull<T>>,
+    pub entry_index: usize,
+}
+
+impl<T> Clone for Weak<T> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -34,15 +51,10 @@ pub trait Allocable {
 pub struct Header {
     pub size: usize,
     pub tag: TypeTag,
-    // todo:
-    // we could have those 3 fields as a single usize field where
-    // 1st bit is marked flag
-    // 2nd bit is rooted flag
-    // 3rd bit is does it have a next node
-    // rest is the next node index
     pub marked: bool,
-    pub rooted: bool,
     pub next_node: Option<usize>,
+    pub strong_count: usize,
+    pub weak_count: usize,
 }
 
 impl Header {
@@ -51,8 +63,9 @@ impl Header {
             size: 0,
             tag: TypeTag::None,
             marked: false,
-            rooted: false,
             next_node: None,
+            strong_count: 0,
+            weak_count: 0,
         }
     }
     pub fn with_next(next: Option<usize>) -> Self {
@@ -60,11 +73,11 @@ impl Header {
             size: 0,
             tag: TypeTag::None,
             marked: false,
-            rooted: false,
             next_node: next,
+            strong_count: 0,
+            weak_count: 0,
         }
     }
-
 }
 
 pub struct HeapEntry {
@@ -87,7 +100,7 @@ impl HeapEntry {
                 }
                 TypeTag::List => {
                     println!("Dropping list");
-                    safe_drop_and_free::<Vec<RuntimeVal>>(ptr.as_ptr());
+                    safe_drop_and_free::<Vec<WeakVal>>(ptr.as_ptr());
                 }
                 TypeTag::RuntimeFunc => {
                     println!("Dropping function");
@@ -98,7 +111,7 @@ impl HeapEntry {
                     safe_drop_and_free::<String>(ptr.as_ptr());
                 }
                 TypeTag::None => (),
-            }
+            },
         }
     }
 
@@ -106,14 +119,16 @@ impl HeapEntry {
         if let None = self.data {
             panic!("Free of an empty heap entry");
         }
-        unsafe { self.drop_data_unchecked(); }
+        unsafe {
+            self.drop_data_unchecked();
+        }
         self.data = None;
     }
 }
 
 unsafe fn safe_drop_and_free<T>(ptr: *mut ()) {
     let ptr = ptr as *mut T;
-    std::ptr::drop_in_place(ptr);
+    //std::ptr::drop_in_place(ptr);
     drop(Box::from_raw(ptr));
 }
 
@@ -128,7 +143,7 @@ pub struct Heap {
     pub first_vacant: Option<usize>,
     pub first_taken: Option<usize>,
     pub vacant_entries: usize,
-    pub taken_entries: usize
+    pub taken_entries: usize,
 }
 
 const MEMORY_LIMIT: usize = 2050;
@@ -168,24 +183,25 @@ impl Heap {
         }
     }
 
-    pub fn allocate<T: Allocable>(&mut self, val: T) -> Gc<T> {
+    pub fn allocate<T: Allocable>(&mut self, val: T) -> Root<T> {
         let data = Self::as_boxed_bytes(val);
         let header = Header {
             marked: false,
-            rooted: true,
             size: std::mem::size_of::<T>(),
             tag: T::tag(),
             next_node: self.first_taken,
+            strong_count: 1,
+            weak_count: 0,
         };
-        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut ())};
+        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut ()) };
         let entry = HeapEntry {
             data: Some(ptr.clone()),
             header,
         };
         let entry_index = self.insert_entry(entry);
         let ptr = ptr.as_ptr() as *mut T;
-        Gc {
-            data: unsafe { ptr::NonNull::new_unchecked(ptr) },
+        Root {
+            data: Cell::new(unsafe { ptr::NonNull::new_unchecked(ptr) }),
             entry_index,
         }
     }
@@ -228,20 +244,71 @@ impl Heap {
         self.vacant_entries = self.entries.len() - self.taken_entries;
     }
 
+    pub fn mutate_root<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
+        unsafe {
+            let mut ptr = ptr.data.get();
+            let reference = ptr.as_mut();
+            func(reference)
+        }
+    }
+
+    pub fn mutate_weak<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
+        unsafe {
+            let mut ptr = ptr.data.get();
+            let reference = ptr.as_mut();
+            func(reference)
+        }
+    }
+
     pub fn as_boxed_bytes<T>(val: T) -> *mut T {
         let ptr = Box::new(val);
         Box::into_raw(ptr)
     }
 
+    pub fn clone_root<T>(&mut self, ptr: &Root<T>) -> Root<T> {
+        self.increment_strong_count(ptr.entry_index);
+        Root {
+            data: ptr.data.clone(),
+            entry_index: ptr.entry_index,
+        }
+    }
+
+    pub fn clone_weak<T>(&mut self, ptr: &Weak<T>) -> Weak<T> {
+        ptr.clone()
+    }
+
+    pub fn downgrade<T>(&mut self, ptr: Root<T>) -> Weak<T> {
+        let weak = Weak {
+            data: Cell::new(ptr.data.get().clone()),
+            entry_index: ptr.entry_index,
+        };
+        self.drop_root(ptr);
+        weak
+    }
+
+    pub fn upgrade<T>(&mut self, ptr: Weak<T>) -> Root<T> {
+        self.increment_strong_count(ptr.entry_index);
+        Root {
+            data: ptr.data,
+            entry_index: ptr.entry_index,
+        }
+    }
+
+    pub fn drop_root<T>(&mut self, ptr: Root<T>) {
+        self.decrement_strong_count(ptr.entry_index);
+        std::mem::forget(ptr);
+    }
+
     pub fn free_entry(&mut self, entry_index: usize) {
         // todo: test
         let entry = &mut self.entries[entry_index];
+        debug_assert!(entry.header.strong_count == 0);
         entry.drop_data();
 
         self.vacant_entries += 1;
         self.taken_entries -= 1;
 
-        let entrys_next_taken =  entry.header.next_node;
+        let next_taken_entry = entry.header.next_node;
 
         entry.header.next_node = self.first_vacant;
         self.first_vacant = Some(entry_index);
@@ -249,12 +316,12 @@ impl Heap {
         let (mut curr, mut last_taken) = match self.first_taken {
             None => unreachable!("trying to free on an empty heap will panic earlier on data drop"),
             Some(next_index) if next_index == entry_index => {
-                self.first_taken = entrys_next_taken;
+                self.first_taken = next_taken_entry;
                 return;
             }
-            Some(next_index) => (Some(next_index), next_index)
+            Some(next_index) => (Some(next_index), next_index),
         };
-        if let None = entrys_next_taken {
+        if let None = next_taken_entry {
             // Return early as there is no point in heap traversal to
             // add an empty tail
             return;
@@ -263,7 +330,21 @@ impl Heap {
             last_taken = index;
             curr = self.entries[index].header.next_node;
         }
-        self.entries[last_taken].header.next_node = entrys_next_taken;
+        self.entries[last_taken].header.next_node = next_taken_entry;
+    }
+
+    fn increment_strong_count(&mut self, entry_index: usize) {
+        self.with_header(entry_index, |header| header.strong_count += 1);
+    }
+
+    fn decrement_strong_count(&mut self, entry_index: usize) {
+        self.with_header(entry_index, |header| header.strong_count -= 1);
+        debug_assert!(self.entries[entry_index].header.strong_count >= 0);
+    }
+
+    fn with_header<F: Fn(&mut Header) -> ()>(&mut self, entry_index: usize, func: F) {
+        let header = &mut self.entries[entry_index].header;
+        func(header);
     }
 }
 
@@ -310,7 +391,7 @@ impl MarkSweep {
         let mut marked = BTreeSet::new();
         let mut curr = heap.first_taken;
         while let Some(entry_index) = curr {
-            if heap.entries[entry_index].header.rooted {
+            if heap.entries[entry_index].header.strong_count > 0 {
                 self.visit_entry(&mut marked, heap, entry_index);
             }
             curr = heap.entries[entry_index].header.next_node;
@@ -330,15 +411,19 @@ impl MarkSweep {
             TypeTag::Lambda => Self::visit_lambda,
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
-            TypeTag::None | TypeTag::RuntimeFunc | TypeTag::String => { return; }
+            TypeTag::None | TypeTag::RuntimeFunc | TypeTag::String => {
+                return;
+            }
         };
         walk_function(self, marked, heap, entry_index);
     }
 
     fn visit_list(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
-        let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<RuntimeVal>;
+        let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<RootedVal>;
         let list_ref = unsafe { list_ref.as_ref().unwrap() };
-        list_ref.iter().for_each(|val| self.visit_runtime_val(marked, heap, val));
+        list_ref
+            .iter()
+            .for_each(|val| self.visit_runtime_val(marked, heap, val));
     }
 
     fn visit_lambda(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
@@ -353,7 +438,7 @@ impl MarkSweep {
         {
             let inner = env.borrow();
             for val in inner.values.values() {
-                self.visit_runtime_val(marked, heap, val);
+                self.visit_weak_val(marked, heap, val);
             }
             parent = inner.parent.clone();
         }
@@ -362,8 +447,21 @@ impl MarkSweep {
         }
     }
 
-    fn visit_runtime_val(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, val: &RuntimeVal) {
-        use RuntimeVal::*;
+    fn visit_runtime_val(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, val: &RootedVal) {
+        use RootedVal::*;
+        match val {
+            Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
+            Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
+            List(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
+            StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
+            // We don't use catch all here so if we add any other type this
+            // will stop compiling and its a good thing
+            NumberVal(_) | Symbol(_) | NativeFunc(_) => (),
+        }
+    }
+
+    fn visit_weak_val(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, val: &WeakVal) {
+        use WeakVal::*;
         match val {
             Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
             Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
@@ -478,23 +576,26 @@ mod tests {
     fn allocating_entry_sets_first_taken_to_first_vacant() {
         let mut heap = Heap::new();
         let first_vacant = heap.first_vacant.clone();
-        heap.allocate(String::new());
+        let res = heap.allocate(String::new());
         assert_eq!(first_vacant, heap.first_taken);
+        heap.drop_root(res);
     }
 
     #[test]
     fn allocating_last_vacant_entry_in_heap_sets_vacant_entry_to_none() {
         let mut heap = Heap::new();
-        heap.allocate(String::new());
+        let res = heap.allocate(String::new());
         assert_eq!(heap.first_vacant, None);
+        heap.drop_root(res);
     }
 
     #[test]
     fn allocating_with_multiple_vacant_entries_moves_vacant_entry_to_the_next() {
         let mut heap = Heap::with_capacity(10);
         let next_vacant = heap.entries[heap.first_vacant.unwrap()].header.next_node;
-        heap.allocate(String::new());
+        let ptr = heap.allocate(String::new());
         assert_eq!(heap.first_vacant, next_vacant);
+        heap.drop_root(ptr);
     }
 
     #[test]
@@ -502,6 +603,7 @@ mod tests {
         let mut heap = Heap::with_capacity(10);
         let ptr = heap.allocate(String::new());
         assert_eq!(heap.entries[ptr.entry_index].header.next_node, None);
+        heap.drop_root(ptr);
     }
 
     #[test]
@@ -513,47 +615,54 @@ mod tests {
             heap.entries[ptr2.entry_index].header.next_node.unwrap(),
             ptr1.entry_index
         );
+        heap.drop_root(ptr1);
+        heap.drop_root(ptr2);
     }
-
 
     #[test]
     fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
         let mut heap = Heap::with_capacity(10);
-        let mut ptr1 = heap.allocate(Vec::new());
-        unsafe { ptr1.data.as_mut().push(RuntimeVal::NumberVal(2.0)) }
+        let ptr1 = heap.allocate(Vec::new());
+        unsafe { ptr1.data.get().as_mut().push(WeakVal::NumberVal(2.0)) }
         let data_ref = *(&heap.entries[ptr1.entry_index]
             .data
             .as_ref()
             .unwrap()
             .as_ptr());
-        let data_ref = data_ref as *const Vec<RuntimeVal>;
+        let data_ref = data_ref as *const Vec<RootedVal>;
         let data_ref = unsafe { data_ref.as_ref().unwrap() };
         let heap_entry_val = match data_ref[0] {
-            RuntimeVal::NumberVal(x) => x,
+            RootedVal::NumberVal(x) => x,
             _ => panic!("that should not happen"),
         };
         assert_eq!(data_ref.len(), 1);
-        assert_eq!(heap_entry_val, 2.0)
+        assert_eq!(heap_entry_val, 2.0);
+        heap.drop_root(ptr1);
     }
 
     #[test]
     fn cloned_gc_pointers_point_to_the_same_data() {
         let mut heap = Heap::with_capacity(10);
         let ptr1 = heap.allocate(String::new());
-        let ptr2 = ptr1.clone();
+        let ptr2 = heap.clone_root(&ptr1);
         assert_eq!(ptr1.entry_index, ptr2.entry_index);
-        assert_eq!(ptr1.data.as_ptr(), ptr2.data.as_ptr());
+        assert_eq!(ptr1.data.get().as_ptr(), ptr2.data.get().as_ptr());
+        heap.drop_root(ptr1);
+        heap.drop_root(ptr2);
     }
 
     #[test]
     fn heap_size_at_lest_doubles_after_allocating_on_full_heap() {
         const INITIAL_HEAP_CAPACITY: usize = 10;
         let mut heap = Heap::with_capacity(INITIAL_HEAP_CAPACITY);
+        let mut allocs = Vec::new();
         for _ in 0..=INITIAL_HEAP_CAPACITY {
-            heap.allocate(String::new());
+            allocs.push(heap.allocate(String::new()));
         }
         assert!(heap.entries.len() >= INITIAL_HEAP_CAPACITY * 2);
+        allocs.into_iter().for_each(|x| heap.drop_root(x));
     }
+
     #[test]
     fn full_heap_after_growing_has_vacant_entries() {
         // we need to have at least capacity 2 for this test to work
@@ -561,40 +670,46 @@ mod tests {
         // take the only vacant entry, or it could grow more as `reserve` on `Vec`
         // can give us more if it wants to.
         let mut heap = Heap::with_capacity(2);
-        heap.allocate(String::new());
-        heap.allocate(String::new());
-        heap.allocate(String::new());
+        let ptr1 = heap.allocate(String::new());
+        let ptr2 = heap.allocate(String::new());
+        let ptr3 = heap.allocate(String::new());
         assert_eq!(heap.first_vacant.unwrap(), heap.entries.len() - 2);
+        heap.drop_root(ptr1);
+        heap.drop_root(ptr2);
+        heap.drop_root(ptr3);
     }
+
 
     #[test]
     fn full_heap_after_growing_does_not_invalidate_pointers() {
         let mut heap = Heap::with_capacity(1);
-        let mut ptr = heap.allocate(Vec::new());
-        heap.allocate(String::new());
-        unsafe { ptr.data.as_mut().push(RuntimeVal::NumberVal(10.0)) };
+        let ptr = heap.allocate(Vec::new());
+        let ptr2 = heap.allocate(String::new());
+        unsafe { ptr.data.get().as_mut().push(WeakVal::NumberVal(10.0)) };
         let data_ref = *(&heap.entries[ptr.entry_index]
             .data
             .as_ref()
             .unwrap()
             .as_ptr());
-        let data_ref = data_ref as *const Vec<RuntimeVal>;
+        let data_ref = data_ref as *const Vec<RootedVal>;
         let data_ref = unsafe { data_ref.as_ref().unwrap() };
         let heap_entry_val = match data_ref[0] {
-            RuntimeVal::NumberVal(x) => x,
+            RootedVal::NumberVal(x) => x,
             _ => panic!("that should not happen"),
         };
         assert_eq!(data_ref.len(), 1);
         assert_eq!(heap_entry_val, 10.0);
+        heap.drop_root(ptr);
+        heap.drop_root(ptr2);
     }
 
     #[test]
     fn heap_allocation_preserves_data() {
         let mut heap = Heap::new();
         let ptr = heap.allocate("Hello".to_string());
-        assert_eq!(
-            unsafe { ptr.data.as_ref() },
-            "Hello"
-        )
+        assert_eq!(unsafe {
+            ptr.data.get().as_ref().clone()
+        }, "Hello");
+        heap.drop_root(ptr);
     }
 }
