@@ -27,18 +27,12 @@ impl Environment {
     }
 
     pub fn update_with(&mut self, other: Environment) {
-        let inner = match Rc::try_unwrap(other.0) {
-            Ok(val) => val,
-            _ => panic!("Merged env was borrowed by someone"),
-        };
+        let inner = other.borrow();
         let self_map = &mut self.borrow_mut().values;
-        inner
-            .into_inner()
-            .values
-            .into_iter()
-            .for_each(|(key, val)| {
-                self_map.entry(key).or_insert(val);
-            });
+        inner.values.iter().for_each(|(key, val)| {
+            println!("Merging with symbol {}", key);
+            self_map.entry(*key).or_insert(val.clone());
+        });
     }
 
     pub fn split(self) -> Environment {

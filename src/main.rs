@@ -3,6 +3,7 @@ use std::env;
 use lispylib::{
     self,
     gc::{Heap, MarkSweep},
+    Interpreter,
 };
 
 fn get_file_name(args: Vec<String>) -> String {
@@ -22,19 +23,13 @@ fn main() -> Result<(), lispylib::ParseError> {
     } = lispylib::read(&source_code)?;
     print!("\n\n\n");
     let env = lispylib::stdlib::std_env(&mut symbol_table_builder);
-    let mut symbol_table = symbol_table_builder.build();
-    let mut heap = Heap::with_capacity(1000);
-    let mut gc = MarkSweep::new();
+    let symbol_table = symbol_table_builder.build();
+    let heap = Heap::with_capacity(1000);
+    let gc = MarkSweep::new();
+    let mut interp = Interpreter::new(heap, gc, env, None, symbol_table);
     for expr in &program {
-        let res = lispylib::eval(
-            &mut heap,
-            &mut gc,
-            env.clone(),
-            None,
-            &mut symbol_table,
-            expr,
-        );
-        res.heap_drop(&mut heap);
+        let res = interp.eval(expr);
+        res.heap_drop(&mut interp.heap);
     }
     Ok(())
 }

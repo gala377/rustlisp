@@ -6,6 +6,7 @@ use std::{
 
 use crate::{
     data::Environment,
+    eval::SavedCtx,
     runtime::{self, Lambda, RootedVal, WeakVal},
 };
 
@@ -16,6 +17,16 @@ pub enum TypeTag {
     String,
     RuntimeFunc,
     None,
+}
+
+#[macro_export]
+macro_rules! check_ptr {
+    ($heap:expr, $ptr:expr) => {
+        assert!(
+            !&$heap.entries[$ptr.entry_index].header.dropped,
+            "Ptr already dropped"
+        )
+    };
 }
 
 pub struct Root<T: ?Sized> {
@@ -55,6 +66,7 @@ pub struct Header {
     pub next_node: Option<usize>,
     pub strong_count: usize,
     pub weak_count: usize,
+    pub dropped: bool,
 }
 
 impl Header {
@@ -66,6 +78,7 @@ impl Header {
             next_node: None,
             strong_count: 0,
             weak_count: 0,
+            dropped: false,
         }
     }
     pub fn with_next(next: Option<usize>) -> Self {
@@ -76,6 +89,7 @@ impl Header {
             next_node: next,
             strong_count: 0,
             weak_count: 0,
+            dropped: false,
         }
     }
 }
@@ -119,6 +133,7 @@ impl HeapEntry {
         if let None = self.data {
             panic!("Free of an empty heap entry");
         }
+        assert!(self.header.strong_count == 0);
         unsafe {
             self.drop_data_unchecked();
         }
@@ -193,6 +208,7 @@ impl Heap {
             next_node: self.first_taken,
             strong_count: 1,
             weak_count: 0,
+            dropped: false,
         };
         let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut ()) };
         let entry = HeapEntry {
@@ -246,6 +262,7 @@ impl Heap {
     }
 
     pub fn mutate_root<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
+        check_ptr!(self, ptr);
         unsafe {
             let mut ptr = ptr.data.get();
             let reference = ptr.as_mut();
@@ -254,6 +271,7 @@ impl Heap {
     }
 
     pub fn mutate_weak<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
+        check_ptr!(self, ptr);
         unsafe {
             let mut ptr = ptr.data.get();
             let reference = ptr.as_mut();
@@ -305,6 +323,7 @@ impl Heap {
         let entry = &mut self.entries[entry_index];
         debug_assert!(entry.header.strong_count == 0);
         entry.drop_data();
+        entry.header.dropped = true;
 
         self.vacant_entries += 1;
         self.taken_entries -= 1;
@@ -355,53 +374,83 @@ impl MarkSweep {
         Self
     }
 
-    pub fn step(&mut self, heap: &mut Heap, globals: Environment, locals: Option<Environment>) {
+    pub fn step(
+        &mut self,
+        heap: &mut Heap,
+        globals: &Environment,
+        locals: &Vec<Environment>,
+        saved_envs: &Vec<SavedCtx>,
+    ) {
+        println!("Starting gc");
         if heap.taken_entries == 0 {
             return;
         }
-        // todo: how do we know something is rooted?
-        // what about variables that are on the stack?
-        //
-        // for example we gc when evaluating
-        // (define x ("hello" "world"))
-        // ------------------^
-        // gc kicks in here
-        // so now we have Gc<String> = "hello" on the stack
-        // that is neither in the local env, neither in the list
-        // (as it does not exist yet).
-        // maybe we mark them as young but then what if
-        // (define x ("hello"  <long list of values> "world"))
-        // GC 1 -------------^
-        // GC 2 -------------------------------------------^
-        // when gc 1 kicks in "hello" is marked as young so we
-        // mark them and move them to the normal entries.
-        // But then gc 2 kicks in  and "hello" still did not leave
-        // the stack.
-        // Maybe we should unroot things and everything
-        // is rooted when it starts?
-        // Maybe we need explicit stack for temporaries just so
-        // we won't deallocate them
+        println!("Marking heap");
         let mut marked = self.traverse_and_mark(heap);
-        if let Some(locals) = locals {
-            self.visit_env(&mut marked, heap, locals);
+        println!("Marking locals");
+        for env in locals {
+            self.visit_env(&mut marked, heap, env.clone());
         }
-        self.visit_env(&mut marked, heap, globals);
+        println!("Marking globals");
+        self.visit_env(&mut marked, heap, globals.clone());
+        println!("Marking saved envs");
+        for (glob, loc) in saved_envs {
+            self.visit_env(&mut marked, heap, glob.clone());
+            for env in loc {
+                self.visit_env(&mut marked, heap, env.clone());
+            }
+        }
         heap.taken_entries = marked.len();
         heap.vacant_entries = heap.entries.len() - marked.len();
+        println!("Sweeping");
         self.sweep(heap);
-        
+        println!("Repairing heap pointers");
         let mut curr = heap.first_taken;
         while let Some(entry_index) = curr {
             heap.entries[entry_index].header.marked = false;
             curr = heap.entries[entry_index].header.next_node;
         }
+
+        // --------------- debug
+        println!("After repair our chain is");
+        curr = heap.first_taken;
+        let mut chain = 0;
+        let mut last_entry = 0;
+        while let Some(entry_index) = curr {
+            println!("{}", entry_index);
+            if entry_index == last_entry {
+                panic!("We have a cycle!");
+            }
+            last_entry = entry_index;
+            curr = heap.entries[entry_index].header.next_node;
+            chain += 1;
+            if chain > 25 {
+                panic!("Taken chain is too long");
+            }
+        }
+        // -------------------- end debug
     }
 
     fn traverse_and_mark(&self, heap: &mut Heap) -> BTreeSet<usize> {
         let mut marked = BTreeSet::new();
         let mut curr = heap.first_taken;
+
+        const N: usize = 5;
+        let mut last_n = Vec::new();
         while let Some(entry_index) = curr {
+            println!("Current index {}", entry_index);
+            if last_n.len() < N {
+                last_n.push(entry_index);
+            } else {
+                if last_n.iter().all(|x| *x == last_n[0]) {
+                    panic!("Last n visits are the same {}", last_n[0]);
+                } else {
+                    last_n.push(entry_index);
+                    last_n.remove(0);
+                }
+            }
             if heap.entries[entry_index].header.strong_count > 0 {
+                println!("String count is higher than 0 we enter");
                 self.visit_entry(&mut marked, heap, entry_index);
             }
             curr = heap.entries[entry_index].header.next_node;
@@ -471,22 +520,27 @@ impl MarkSweep {
     }
 
     fn sweep(&mut self, heap: &mut Heap) {
-        let curr = match self.free_from_head(heap) {
+        let first_marked = self.free_from_head(heap);
+        heap.first_taken = first_marked;
+        let curr = match first_marked {
             None => return,
-            Some(curr) => curr,
+            Some(index) => index,
         };
         let mut last_marked = curr;
         let mut curr = heap.entries[curr].header.next_node;
         while let Some(entry_index) = curr {
-            let entry = &mut heap.entries[entry_index];
-            if entry.header.marked {
+            let marked = heap.entries[entry_index].header.marked;
+            if  marked {
+                let entry = &mut heap.entries[entry_index];
                 last_marked = entry_index;
                 curr = entry.header.next_node;
                 continue;
             }
+            print_debug_value(heap, entry_index);
+            let entry = &mut heap.entries[entry_index];
             curr = entry.header.next_node;
-
             entry.drop_data();
+            entry.header.dropped = true;
             entry.header.next_node = heap.first_vacant;
             heap.first_vacant = Some(entry_index);
 
@@ -495,8 +549,9 @@ impl MarkSweep {
     }
 
     fn free_from_head(&mut self, heap: &mut Heap) -> Option<usize> {
-        let mut curr = heap.first_taken.unwrap();
+        let mut curr = heap.first_taken?;
         while !heap.entries[curr].header.marked {
+            print_debug_value(heap, curr);
             let entry = &mut heap.entries[curr];
             entry.drop_data();
             let next_node = entry.header.next_node;
@@ -510,6 +565,31 @@ impl MarkSweep {
         // we need to start removing from the middle
         Some(curr)
     }
+}
+
+fn print_debug_value(heap: &mut Heap, entry_index: usize) {
+    let entry = &heap.entries[entry_index];
+    let to_print = match entry.header.tag {
+        TypeTag::Lambda => "[GC] Lambda is dropped".to_owned(),
+        TypeTag::None => "[GC] No type tag for the value".to_owned(),
+        TypeTag::RuntimeFunc => unsafe {
+            let ptr = entry.data.unwrap().as_ptr() as *const runtime::RuntimeFunc;
+            let as_ref = ptr.as_ref().unwrap();
+            format!("[GC] Dropping function with name {}", as_ref.name)
+        }
+        TypeTag::String => unsafe {
+            let ptr = entry.data.unwrap().as_ptr() as *const String;
+            let copy = ptr.as_ref().unwrap().clone();
+            format!("[GC] Dropping string {}", &copy)
+        }
+        TypeTag::List => unsafe {
+            let ptr = entry.data.unwrap().as_ptr() as *const Vec<WeakVal>;
+            let msg: Vec<String> = ptr.as_ref().unwrap().iter().map(|x| x.simple_repr()).collect();
+            let msg = msg.concat();
+            format!("[GC] Dropping list: {}", &msg)
+        }
+    };
+    println!("{}", to_print);
 }
 
 #[cfg(test)]

@@ -11,7 +11,7 @@
 
 (def CONST-VAL 1000000)
 (def dont-rewrite "REWRITEN")
-(def this-crashes dont-rewrite)
+(def this-crashes "MEMOOOORY PROBLEEEMS")
 
 (def (using-old-rewrite)
     (print dont-rewrite)
@@ -20,3 +20,4 @@
 
 (print "okay everything ended")
 (print (+ "does it crash?" this-crashes))
+(print-globals)

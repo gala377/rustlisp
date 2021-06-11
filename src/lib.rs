@@ -8,4 +8,4 @@ pub mod utils;
 
 pub use reader::{read, ParseError, AST};
 
-pub use eval::eval;
+pub use eval::Interpreter;

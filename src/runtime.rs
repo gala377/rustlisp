@@ -1,6 +1,8 @@
 use std::rc::Rc;
 
+use crate::check_ptr;
 use crate::data::BuiltinSymbols;
+use crate::eval::Interpreter;
 use crate::gc;
 use crate::gc::MarkSweep;
 use crate::{
@@ -40,9 +42,7 @@ impl RuntimeFunc {
     }
 }
 
-pub type NativeFunc = Rc<
-    dyn Fn(&mut Heap, &mut MarkSweep, Environment, &mut SymbolTable, Vec<RootedVal>) -> RootedVal,
->;
+pub type NativeFunc = Rc<dyn Fn(&mut Interpreter, Vec<RootedVal>) -> RootedVal>;
 
 impl<F> Allocable for F
 where
@@ -178,6 +178,7 @@ impl RootedVal {
 
     pub fn list_from_rooted(val: Vec<RootedVal>, heap: &mut Heap) -> RootedVal {
         let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::new());
+        check_ptr!(heap, inner);
         let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade(heap)).collect();
         unsafe { inner.data.get().as_mut().extend(val.into_iter()) };
         Self::List(inner)
@@ -185,14 +186,7 @@ impl RootedVal {
 
     pub fn native_function<Func>(func: Func) -> RootedVal
     where
-        Func: 'static
-            + Fn(
-                &mut Heap,
-                &mut MarkSweep,
-                Environment,
-                &mut SymbolTable,
-                Vec<RootedVal>,
-            ) -> RootedVal,
+        Func: 'static + Fn(&mut Interpreter, Vec<RootedVal>) -> RootedVal,
     {
         RootedVal::NativeFunc(Rc::new(func))
     }
@@ -262,14 +256,7 @@ impl WeakVal {
 
     pub fn native_function<Func>(func: Func) -> WeakVal
     where
-        Func: 'static
-            + Fn(
-                &mut Heap,
-                &mut MarkSweep,
-                Environment,
-                &mut SymbolTable,
-                Vec<RootedVal>,
-            ) -> RootedVal,
+        Func: 'static + Fn(&mut Interpreter, Vec<RootedVal>) -> RootedVal,
     {
         Self::NativeFunc(Rc::new(func))
     }
@@ -307,6 +294,39 @@ impl WeakVal {
             StringVal(val) => unsafe { val.data.get().as_ref().clone() },
             Symbol(val) => symbol_table[*val].clone(),
             list @ List(_) => list.repr(symbol_table),
+            NativeFunc(_) => "Native function".to_owned(),
+            Func(func) => {
+                let name = unsafe { symbol_table[func.data.get().as_ref().name].clone() };
+                format!("Runtime function {}", name)
+            }
+            Lambda(_) => "Lambda function".to_owned(),
+            _ => panic!("No str representation"),
+        }
+    }
+
+    pub fn simple_repr(&self) -> std::string::String {
+        use WeakVal::*;
+        match self {
+            NumberVal(val) => val.to_string(),
+            StringVal(val) => unsafe { val.data.get().as_ref().clone() },
+            Symbol(val) => val.to_string(),
+            List(vals) =>  {
+                let mut res = std::string::String::from("(");
+                unsafe {
+                    vals.data.get().as_ref().iter().for_each(|val| {
+                        res += &val.simple_repr();
+                        res += " ";
+                    });
+                }
+                res += ")";
+                res
+            },
+            NativeFunc(_) => "Native function".to_owned(),
+            Func(func) => {
+                let name = unsafe { func.data.get().as_ref().name };
+                format!("Runtime function {}", name)
+            }
+            Lambda(_) => "Lambda function".to_owned(),
             _ => panic!("No str representation"),
         }
     }
