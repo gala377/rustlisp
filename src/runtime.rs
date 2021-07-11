@@ -180,7 +180,7 @@ impl RootedVal {
         let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::new());
         check_ptr!(heap, inner);
         let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade(heap)).collect();
-        unsafe { inner.data.get().as_mut().extend(val.into_iter()) };
+        unsafe { inner.data.as_mut().extend(val.into_iter()) };
         Self::List(inner)
     }
 
@@ -195,12 +195,12 @@ impl RootedVal {
         use RootedVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => format!(r#""{}""#, unsafe { val.data.get().as_ref() }),
+            StringVal(val) => format!(r#""{}""#, unsafe { val.data.as_ref() }),
             Symbol(val) => symbol_table[*val].clone(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
                 unsafe {
-                    vals.data.get().as_ref().iter().for_each(|val| {
+                    vals.data.as_ref().iter().for_each(|val| {
                         res += &val.repr(symbol_table);
                         res += " ";
                     });
@@ -210,7 +210,7 @@ impl RootedVal {
             }
             NativeFunc(_) => std::string::String::from("Native function"),
             Func(func) => {
-                let symbol = unsafe { func.data.get().as_ref().name };
+                let symbol = unsafe { func.data.as_ref().name };
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
@@ -221,7 +221,7 @@ impl RootedVal {
         use RootedVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => unsafe { val.data.get().as_ref().clone() },
+            StringVal(val) => unsafe { val.data.as_ref().clone() },
             Symbol(val) => symbol_table[*val].clone(),
             list @ List(_) => list.repr(symbol_table),
             _ => panic!("No str representation"),
@@ -265,12 +265,12 @@ impl WeakVal {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => format!(r#""{}""#, unsafe { val.data.get().as_ref() }),
+            StringVal(val) => format!(r#""{}""#, unsafe { val.data.as_ref() }),
             Symbol(val) => symbol_table[*val].clone(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
                 unsafe {
-                    vals.data.get().as_ref().iter().for_each(|val| {
+                    vals.data.as_ref().iter().for_each(|val| {
                         res += &val.repr(symbol_table);
                         res += " ";
                     });
@@ -280,7 +280,7 @@ impl WeakVal {
             }
             NativeFunc(_) => std::string::String::from("Native function"),
             Func(func) => {
-                let symbol = unsafe { func.data.get().as_ref().name };
+                let symbol = unsafe { func.data.as_ref().name };
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
@@ -291,12 +291,12 @@ impl WeakVal {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => unsafe { val.data.get().as_ref().clone() },
+            StringVal(val) => unsafe { val.data.as_ref().clone() },
             Symbol(val) => symbol_table[*val].clone(),
             list @ List(_) => list.repr(symbol_table),
             NativeFunc(_) => "Native function".to_owned(),
             Func(func) => {
-                let name = unsafe { symbol_table[func.data.get().as_ref().name].clone() };
+                let name = unsafe { symbol_table[func.data.as_ref().name].clone() };
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),
@@ -308,22 +308,22 @@ impl WeakVal {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => unsafe { val.data.get().as_ref().clone() },
+            StringVal(val) => unsafe { val.data.as_ref().clone() },
             Symbol(val) => val.to_string(),
-            List(vals) =>  {
+            List(vals) => {
                 let mut res = std::string::String::from("(");
                 unsafe {
-                    vals.data.get().as_ref().iter().for_each(|val| {
+                    vals.data.as_ref().iter().for_each(|val| {
                         res += &val.simple_repr();
                         res += " ";
                     });
                 }
                 res += ")";
                 res
-            },
+            }
             NativeFunc(_) => "Native function".to_owned(),
             Func(func) => {
-                let name = unsafe { func.data.get().as_ref().name };
+                let name = unsafe { func.data.as_ref().name };
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),

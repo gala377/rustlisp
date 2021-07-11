@@ -92,18 +92,13 @@ impl Interpreter {
         let res = match func {
             RootedVal::Func(func) => unsafe {
                 check_ptr!(self.heap, func);
-                let ptr = func.data.get();
-                let func = ptr.as_ref();
+                let func = func.data.as_ref();
                 let func_env = func_call_env(&mut self.heap, &func.args, args);
-                self.locals.push(func_env);
-                let res = self.eval(&func.body);
-                self.locals.pop();
-                res
+                self.with_locals(func_env, |vm| vm.eval(&func.body))
             },
             RootedVal::Lambda(lambda_ref) => unsafe {
                 check_ptr!(self.heap, lambda_ref);
-                let ptr = lambda_ref.data.get();
-                let lambda = ptr.as_ref();
+                let lambda = lambda_ref.data.as_ref();
                 let func_env = func_call_env_with_parent(
                     &mut self.heap,
                     &lambda.args,
@@ -111,17 +106,12 @@ impl Interpreter {
                     lambda.env.clone(),
                 );
                 // TODO: DIFF WITH PREVIOUS VERSION TO SEE IF LOCALS WHERE CHANGED CORRECTLY
-                self.locals.push(func_env);
-                let res = self.eval(&lambda.body);
-                self.locals.pop();
-                res
+                self.with_locals(func_env, |vm| vm.eval(&lambda.body))
             },
-            // TODO: CHANGE NATIVE FUNCTIONS TO USE VM
             RootedVal::NativeFunc(func) => {
                 println!("Native func...");
-                self.locals.push(Env::new());
-                let res = func(self, args);
-                self.locals.pop();
+                let res = self.with_locals(Env::new(), |vm| func(vm, args));
+
                 println!("Returning from native");
                 res
             }
@@ -135,6 +125,13 @@ impl Interpreter {
             &self.saved_ctxs,
         );
         println!("-----------Gc step ended -------------\n");
+        res
+    }
+
+    fn with_locals<R>(&mut self, env: Env, func: impl FnOnce(&mut Self) -> R) -> R {
+        self.locals.push(env);
+        let res = func(self);
+        self.locals.pop();
         res
     }
 

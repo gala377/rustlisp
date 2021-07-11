@@ -45,7 +45,7 @@ fn define_prelude_functions(
                 [StringVal(a), StringVal(b)] => {
                     check_ptr!(vm.heap, a);
                     check_ptr!(vm.heap, b);
-                    RootedVal::predicate(unsafe {a.data.get().as_ref()} ==  unsafe { b.data.get().as_ref()})
+                    RootedVal::predicate(unsafe {a.data.as_ref()} ==  unsafe { b.data.as_ref()})
                 }
                 [NumberVal(a), NumberVal(b)] => RootedVal::predicate(a == b),
                 [List(a), List(b)] => RootedVal::predicate(a.data.as_ptr() == b.data.as_ptr()),
@@ -84,7 +84,7 @@ fn define_prelude_functions(
             assert_eq!(args.len(), 1, "null takes one argument");
             let res = if let List(inner) = &args[0] {
                 check_ptr!(vm.heap, inner);
-                RootedVal::predicate(unsafe { inner.data.get().as_ref().is_empty() } )
+                RootedVal::predicate(unsafe { inner.data.as_ref().is_empty() } )
             } else {
                 panic!("null can only be called on lists");
             };
@@ -106,7 +106,7 @@ fn define_prelude_functions(
             let (list, func) = (args.pop().unwrap(), args.pop().unwrap());
             let res = if let List(list) = list {
                 check_ptr!(vm.heap, list);
-                let res = unsafe { list.data.get().as_ref() }.iter()
+                let res = unsafe { list.data.as_ref() }.iter()
                     .map(|x| {
                         let args = vec![x.clone().upgrade(&mut vm.heap)];
                         vm.call(&func, args)
@@ -172,7 +172,7 @@ fn assert_impl(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
     match message {
         RootedVal::StringVal(ptr) => {
             check_ptr!(vm.heap, ptr);
-            let msg = unsafe { ptr.data.get().as_ref().clone() };
+            let msg = unsafe { ptr.data.as_ref().clone() };
             vm.heap.drop_root(ptr);
             panic!("{}", msg);
         }
@@ -208,7 +208,7 @@ fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
     assert_eq!(args.len(), 1, "load takes only one argument");
     let arg = args.pop().unwrap();
     match arg {
-        RootedVal::List(inner) => match unsafe { inner.data.get().as_ref().as_slice() } {
+        RootedVal::List(inner) => match unsafe { inner.data.as_ref().as_slice() } {
             [WeakVal::StringVal(_path), WeakVal::Symbol(_as_symbol)] => {
                 unimplemented!()
             }
@@ -218,8 +218,7 @@ fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
             check_ptr!(vm.heap, path);
             let symbol_table_builder = SymbolTableBuilder::with_symbols(&mut vm.symbols);
             let file_source = unsafe {
-                let ptr = path.data.get();
-                let path = ptr.as_ref();
+                let path = path.data.as_ref();
                 println!("the path we load from is {}", path);
                 std::fs::read_to_string(path).unwrap()
             };
@@ -270,7 +269,7 @@ fn concatenate_strings(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal 
         args.into_iter().fold(String::new(), |acc, x| match x {
             RootedVal::StringVal(inner) => {
                 check_ptr!(vm.heap, inner);
-                let res = acc + unsafe { inner.data.get().as_ref() };
+                let res = acc + unsafe { inner.data.as_ref() };
                 vm.heap.drop_root(inner);
                 res
             }
@@ -287,7 +286,7 @@ fn concatenate_lists(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
             RootedVal::List(ptr) => {
                 check_ptr!(vm.heap, ptr);
                 vm.heap.mutate_root(&mut init, |init| {
-                    init.extend(unsafe { ptr.data.get().as_ref().iter().cloned() });
+                    init.extend(unsafe { ptr.data.as_ref().iter().cloned() });
                 });
                 vm.heap.drop_root(ptr);
             }

@@ -30,7 +30,7 @@ macro_rules! check_ptr {
 }
 
 pub struct Root<T: ?Sized> {
-    pub data: Cell<ptr::NonNull<T>>,
+    pub data: ptr::NonNull<T>,
     pub entry_index: usize,
 }
 
@@ -41,7 +41,7 @@ impl<T: ?Sized> Drop for Root<T> {
 }
 
 pub struct Weak<T: ?Sized> {
-    pub data: Cell<ptr::NonNull<T>>,
+    pub data: ptr::NonNull<T>,
     pub entry_index: usize,
 }
 
@@ -200,7 +200,7 @@ impl Heap {
     }
 
     pub fn allocate<T: Allocable>(&mut self, val: T) -> Root<T> {
-        let data = Self::as_boxed_bytes(val);
+        let data = Self::heap_allocate(val);
         let header = Header {
             marked: false,
             size: std::mem::size_of::<T>(),
@@ -218,7 +218,7 @@ impl Heap {
         let entry_index = self.insert_entry(entry);
         let ptr = ptr.as_ptr() as *mut T;
         Root {
-            data: Cell::new(unsafe { ptr::NonNull::new_unchecked(ptr) }),
+            data: unsafe { ptr::NonNull::new_unchecked(ptr) },
             entry_index,
         }
     }
@@ -264,8 +264,7 @@ impl Heap {
     pub fn mutate_root<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
         check_ptr!(self, ptr);
         unsafe {
-            let mut ptr = ptr.data.get();
-            let reference = ptr.as_mut();
+            let reference = ptr.data.as_mut();
             func(reference)
         }
     }
@@ -273,13 +272,12 @@ impl Heap {
     pub fn mutate_weak<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
         check_ptr!(self, ptr);
         unsafe {
-            let mut ptr = ptr.data.get();
-            let reference = ptr.as_mut();
+            let reference = ptr.data.as_mut();
             func(reference)
         }
     }
 
-    pub fn as_boxed_bytes<T>(val: T) -> *mut T {
+    fn heap_allocate<T>(val: T) -> *mut T {
         let ptr = Box::new(val);
         Box::into_raw(ptr)
     }
@@ -298,7 +296,7 @@ impl Heap {
 
     pub fn downgrade<T>(&mut self, ptr: Root<T>) -> Weak<T> {
         let weak = Weak {
-            data: Cell::new(ptr.data.get().clone()),
+            data: ptr.data.clone(),
             entry_index: ptr.entry_index,
         };
         self.drop_root(ptr);
@@ -530,7 +528,7 @@ impl MarkSweep {
         let mut curr = heap.entries[curr].header.next_node;
         while let Some(entry_index) = curr {
             let marked = heap.entries[entry_index].header.marked;
-            if  marked {
+            if marked {
                 let entry = &mut heap.entries[entry_index];
                 last_marked = entry_index;
                 curr = entry.header.next_node;
@@ -576,18 +574,23 @@ fn print_debug_value(heap: &mut Heap, entry_index: usize) {
             let ptr = entry.data.unwrap().as_ptr() as *const runtime::RuntimeFunc;
             let as_ref = ptr.as_ref().unwrap();
             format!("[GC] Dropping function with name {}", as_ref.name)
-        }
+        },
         TypeTag::String => unsafe {
             let ptr = entry.data.unwrap().as_ptr() as *const String;
             let copy = ptr.as_ref().unwrap().clone();
             format!("[GC] Dropping string {}", &copy)
-        }
+        },
         TypeTag::List => unsafe {
             let ptr = entry.data.unwrap().as_ptr() as *const Vec<WeakVal>;
-            let msg: Vec<String> = ptr.as_ref().unwrap().iter().map(|x| x.simple_repr()).collect();
+            let msg: Vec<String> = ptr
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|x| x.simple_repr())
+                .collect();
             let msg = msg.concat();
             format!("[GC] Dropping list: {}", &msg)
-        }
+        },
     };
     println!("{}", to_print);
 }
@@ -698,8 +701,8 @@ mod tests {
     #[test]
     fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
         let mut heap = Heap::with_capacity(10);
-        let ptr1 = heap.allocate(Vec::new());
-        unsafe { ptr1.data.get().as_mut().push(WeakVal::NumberVal(2.0)) }
+        let mut ptr1 = heap.allocate(Vec::new());
+        unsafe { ptr1.data.as_mut().push(WeakVal::NumberVal(2.0)) }
         let data_ref = *(&heap.entries[ptr1.entry_index]
             .data
             .as_ref()
@@ -722,7 +725,7 @@ mod tests {
         let ptr1 = heap.allocate(String::new());
         let ptr2 = heap.clone_root(&ptr1);
         assert_eq!(ptr1.entry_index, ptr2.entry_index);
-        assert_eq!(ptr1.data.get().as_ptr(), ptr2.data.get().as_ptr());
+        assert_eq!(ptr1.data.as_ptr(), ptr2.data.as_ptr());
         heap.drop_root(ptr1);
         heap.drop_root(ptr2);
     }
@@ -758,9 +761,9 @@ mod tests {
     #[test]
     fn full_heap_after_growing_does_not_invalidate_pointers() {
         let mut heap = Heap::with_capacity(1);
-        let ptr = heap.allocate(Vec::new());
+        let mut ptr = heap.allocate(Vec::new());
         let ptr2 = heap.allocate(String::new());
-        unsafe { ptr.data.get().as_mut().push(WeakVal::NumberVal(10.0)) };
+        unsafe { ptr.data.as_mut().push(WeakVal::NumberVal(10.0)) };
         let data_ref = *(&heap.entries[ptr.entry_index]
             .data
             .as_ref()
@@ -782,7 +785,7 @@ mod tests {
     fn heap_allocation_preserves_data() {
         let mut heap = Heap::new();
         let ptr = heap.allocate("Hello".to_string());
-        assert_eq!(unsafe { ptr.data.get().as_ref().clone() }, "Hello");
+        assert_eq!(unsafe { ptr.data.as_ref().clone() }, "Hello");
         heap.drop_root(ptr);
     }
 }
