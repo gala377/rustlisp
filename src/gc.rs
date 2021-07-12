@@ -1,13 +1,13 @@
 use std::{
-    cell::{Cell, RefCell},
     collections::BTreeSet,
+    ops::{Deref, DerefMut},
     ptr,
 };
 
 use crate::{
     data::Environment,
     eval::SavedCtx,
-    runtime::{self, Lambda, RootedVal, WeakVal},
+    runtime::{self, Lambda, WeakVal},
 };
 
 #[derive(PartialEq, Eq, Clone, Debug)]
@@ -23,15 +23,113 @@ pub enum TypeTag {
 macro_rules! check_ptr {
     ($heap:expr, $ptr:expr) => {
         assert!(
-            !&$heap.entries[$ptr.entry_index].header.dropped,
+            !&$heap.entries[$ptr.entry_index()].header.dropped,
             "Ptr already dropped"
         )
     };
 }
 
+pub struct ScopedPtr<'guard, T> {
+    pub value: &'guard T,
+    // guard: &'guard dyn ScopeGuard,
+}
+
+impl<T> Deref for ScopedPtr<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.value
+    }
+}
+
+pub struct ScopedMutPtr<'guard, T> {
+    pub value: &'guard mut T,
+    // guard: &'guard mut dyn ScopeGuard,
+}
+
+impl<T> Deref for ScopedMutPtr<'_, T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.value
+    }
+}
+
+impl<T> DerefMut for ScopedMutPtr<'_, T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.value
+    }
+}
+
+pub trait ScopedRef<T> {
+    fn scoped_ref<'a>(&'a self, guard: &'a dyn ScopeGuard) -> &'a T;
+    fn scoped_ref_mut<'a>(&'a mut self, guard: &'a mut dyn ScopeGuard) -> &'a mut T;
+}
+
+pub trait HeapMarked {
+    fn entry_index(&self) -> usize;
+}
+
+/// ScopeGuard marks types that can be used as
+/// a guard that upholds rust's invariants regarding
+/// mutability and shared references when dereferencing
+/// Weak or Root pointers.
+///
+/// In other words: mutable dereference of a pointer depends
+/// on mutable borrow of a guard. Immutable dereference of
+/// a pointer depends on immutable borrow of a guard.
+/// This means that all dereferences that share the same guard
+/// are guaranteed, by the guards sharing and ownership, to be safe.
+///
+/// When implementing this trait it is users responsibility to
+/// ensure that proper guard instance will be used with each 
+/// dereference. Not upholding this might result in
+/// undefined behavior.
+pub unsafe trait ScopeGuard {}
+
 pub struct Root<T: ?Sized> {
-    pub data: ptr::NonNull<T>,
+    data: ptr::NonNull<T>,
     pub entry_index: usize,
+}
+
+impl<T> PartialEq for Root<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T> Eq for Root<T> {}
+
+impl<T> ScopedRef<T> for Root<T> {
+    fn scoped_ref<'a>(&'a self, _guard: &'a dyn ScopeGuard) -> &'a T {
+        // This is safe because the only way to call this method is to pass
+        // a guard that has the same borrow as this ref.
+        // So we cannot borrow mutably if we borrow guard mutably at the same time.
+        // The ScopeGuard trait is an unsafe trait only implemented for
+        // a Heap struct in this module which cannot be cloned during
+        // mutator's execution.
+        // If the user implements ScopeGuard themselves it's their responsibility
+        // to ensure that the rust invariants will be upheld.
+        unsafe { self.data.as_ref() }
+    }
+
+    fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
+        // This is safe because the only way to call this method is to pass
+        // a guard that has the same borrow as this ref.
+        // So we cannot borrow mutably if we borrow guard mutably at the same time.
+        // The ScopeGuard trait is an unsafe trait only implemented for
+        // a Heap struct in this module which cannot be cloned during
+        // mutator's execution.
+        // If the user implements ScopeGuard themselves it's their responsibility
+        // to ensure that the rust invariants will be upheld.
+        unsafe { self.data.as_mut() }
+    }
+}
+
+impl<T> HeapMarked for Root<T> {
+    fn entry_index(&self) -> usize {
+        self.entry_index
+    }
 }
 
 impl<T: ?Sized> Drop for Root<T> {
@@ -41,8 +139,32 @@ impl<T: ?Sized> Drop for Root<T> {
 }
 
 pub struct Weak<T: ?Sized> {
-    pub data: ptr::NonNull<T>,
-    pub entry_index: usize,
+    data: ptr::NonNull<T>,
+    entry_index: usize,
+}
+
+impl<T> PartialEq for Weak<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.data == other.data
+    }
+}
+
+impl<T> Eq for Weak<T> {}
+
+impl<T> ScopedRef<T> for Weak<T> {
+    fn scoped_ref<'a>(&'a self, _guard: &'a dyn ScopeGuard) -> &'a T {
+        unsafe { self.data.as_ref() }
+    }
+
+    fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
+        unsafe { self.data.as_mut() }
+    }
+}
+
+impl<T> HeapMarked for Weak<T> {
+    fn entry_index(&self) -> usize {
+        self.entry_index
+    }
 }
 
 impl<T> Clone for Weak<T> {
@@ -176,6 +298,11 @@ fn get_initialized_heap_storage(initial_size: usize) -> Vec<HeapEntry> {
     heap
 }
 
+// This one is safe as it's the heap that owns all of the
+// allocated values so it makes sense to bind reference
+// lifetimes and mutability with their owner.
+unsafe impl ScopeGuard for Heap {}
+
 impl Heap {
     // Creates new heap with capacity one.
     //
@@ -261,19 +388,27 @@ impl Heap {
         self.vacant_entries = self.entries.len() - self.taken_entries;
     }
 
-    pub fn mutate_root<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
+    pub fn mutate<T, R, Func, Ptr>(&mut self, ptr: &mut Ptr, func: Func) -> R
+    where
+        Func: FnOnce(&mut T) -> R,
+        Ptr: ScopedRef<T> + HeapMarked,
+    {
         check_ptr!(self, ptr);
-        unsafe {
-            let reference = ptr.data.as_mut();
-            func(reference)
+        let mut reference = self.deref_mut(ptr);
+        func(&mut reference)
+    }
+
+    pub fn deref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
+        ScopedPtr {
+            value: ptr.scoped_ref(self),
+            // guard: self,
         }
     }
 
-    pub fn mutate_weak<T, F: Fn(&mut T) -> R, R>(&mut self, ptr: &mut Root<T>, func: F) -> R {
-        check_ptr!(self, ptr);
-        unsafe {
-            let reference = ptr.data.as_mut();
-            func(reference)
+    pub fn deref_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
+        ScopedMutPtr {
+            value: ptr.scoped_ref_mut(self),
+            // guard: self,
         }
     }
 
@@ -586,7 +721,7 @@ fn print_debug_value(heap: &mut Heap, entry_index: usize) {
                 .as_ref()
                 .unwrap()
                 .iter()
-                .map(|x| x.simple_repr())
+                .map(|x| x.simple_repr(heap))
                 .collect();
             let msg = msg.concat();
             format!("[GC] Dropping list: {}", &msg)
@@ -599,6 +734,7 @@ fn print_debug_value(heap: &mut Heap, entry_index: usize) {
 mod tests {
 
     use super::*;
+    use crate::runtime::RootedVal;
 
     #[test]
     fn empty_heap_has_nonzero_capacity() {

@@ -1,12 +1,10 @@
 use core::panic;
 use std::convert::TryInto;
-use std::ops::Index;
 
 use crate::check_ptr;
 use crate::data::{BuiltinSymbols, Environment, SExpr, SymbolId, SymbolTable};
-use crate::gc::{Heap, MarkSweep};
+use crate::gc::{Heap, HeapMarked, MarkSweep};
 use crate::runtime::{drop_rooted_vec, RootedVal};
-use crate::utils::print_sexpr_impl;
 
 type Env = Environment;
 
@@ -90,28 +88,34 @@ impl Interpreter {
     pub fn call(&mut self, func: &RootedVal, args: Vec<RootedVal>) -> RootedVal {
         println!("Calling func...");
         let res = match func {
-            RootedVal::Func(func) => unsafe {
+            RootedVal::Func(func) => {
                 check_ptr!(self.heap, func);
-                let func = func.data.as_ref();
-                let func_env = func_call_env(&mut self.heap, &func.args, args);
-                self.with_locals(func_env, |vm| vm.eval(&func.body))
-            },
-            RootedVal::Lambda(lambda_ref) => unsafe {
+                let (func_body, func_args) = {
+                    let func = self.heap.deref(func);
+                    let body = func.body.clone();
+                    let args = func.args.clone();
+                    (body, args)
+                };
+                let func_env = func_call_env(&mut self.heap, &func_args, args);
+                self.with_locals(func_env, |vm| vm.eval(&func_body))
+            }
+            RootedVal::Lambda(lambda_ref) => {
                 check_ptr!(self.heap, lambda_ref);
-                let lambda = lambda_ref.data.as_ref();
-                let func_env = func_call_env_with_parent(
-                    &mut self.heap,
-                    &lambda.args,
-                    args,
-                    lambda.env.clone(),
-                );
+                let (func_body, func_args, func_env) = {
+                    let func = self.heap.deref(lambda_ref);
+                    let body = func.body.clone();
+                    let args = func.args.clone();
+                    let env = func.env.clone();
+                    (body, args, env)
+                };
+                let func_env =
+                    func_call_env_with_parent(&mut self.heap, &func_args, args, func_env);
                 // TODO: DIFF WITH PREVIOUS VERSION TO SEE IF LOCALS WHERE CHANGED CORRECTLY
-                self.with_locals(func_env, |vm| vm.eval(&lambda.body))
-            },
+                self.with_locals(func_env, |vm| vm.eval(&func_body))
+            }
             RootedVal::NativeFunc(func) => {
                 println!("Native func...");
                 let res = self.with_locals(Env::new(), |vm| func(vm, args));
-
                 println!("Returning from native");
                 res
             }

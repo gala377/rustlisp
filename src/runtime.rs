@@ -1,19 +1,17 @@
+use crate::{
+    check_ptr,
+    data::BuiltinSymbols,
+    data::{Environment, SExpr, SymbolId, SymbolTable},
+    eval::Interpreter,
+    gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag},
+};
 use std::rc::Rc;
 
-use crate::check_ptr;
-use crate::data::BuiltinSymbols;
-use crate::eval::Interpreter;
-use crate::gc;
-use crate::gc::MarkSweep;
-use crate::{
-    data::{Environment, SExpr, SymbolId, SymbolTable},
-    gc::{Allocable, Heap, Root, TypeTag},
-};
-
 pub struct Lambda {
-    pub body: Box<SExpr>,
+    pub body: Rc<SExpr>,
     pub args: Vec<SymbolId>,
     pub env: Environment,
+    // pub globals: Environment, // todo: add this for proper globals resolution
 }
 
 impl Lambda {
@@ -21,15 +19,16 @@ impl Lambda {
         Self {
             env,
             args,
-            body: Box::new(body),
+            body: Rc::new(body),
         }
     }
 }
 
 pub struct RuntimeFunc {
-    pub body: Box<SExpr>,
+    pub body: Rc<SExpr>,
     pub name: SymbolId,
     pub args: Vec<SymbolId>,
+    // pub globals: Environment, // todo: add this for proper globals resolution
 }
 
 impl RuntimeFunc {
@@ -37,7 +36,7 @@ impl RuntimeFunc {
         Self {
             name,
             args,
-            body: Box::new(body),
+            body: Rc::new(body),
         }
     }
 }
@@ -180,7 +179,7 @@ impl RootedVal {
         let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::new());
         check_ptr!(heap, inner);
         let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade(heap)).collect();
-        unsafe { inner.data.as_mut().extend(val.into_iter()) };
+        heap.deref_mut(&mut inner).extend(val.into_iter());
         Self::List(inner)
     }
 
@@ -191,39 +190,37 @@ impl RootedVal {
         RootedVal::NativeFunc(Rc::new(func))
     }
 
-    pub fn repr(&self, symbol_table: &SymbolTable) -> std::string::String {
+    pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use RootedVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => format!(r#""{}""#, unsafe { val.data.as_ref() }),
+            StringVal(val) => format!(r#""{}""#, *heap.deref(val)),
             Symbol(val) => symbol_table[*val].clone(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
-                unsafe {
-                    vals.data.as_ref().iter().for_each(|val| {
-                        res += &val.repr(symbol_table);
-                        res += " ";
-                    });
-                }
+                heap.deref(vals).iter().for_each(|val| {
+                    res += &val.repr(heap, symbol_table);
+                    res += " ";
+                });
                 res += ")";
                 res
             }
             NativeFunc(_) => std::string::String::from("Native function"),
             Func(func) => {
-                let symbol = unsafe { func.data.as_ref().name };
+                let symbol = heap.deref(func).name;
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
         }
     }
 
-    pub fn str(&self, symbol_table: &SymbolTable) -> std::string::String {
+    pub fn str(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use RootedVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => unsafe { val.data.as_ref().clone() },
+            StringVal(val) => heap.deref(val).clone(),
             Symbol(val) => symbol_table[*val].clone(),
-            list @ List(_) => list.repr(symbol_table),
+            list @ List(_) => list.repr(heap, symbol_table),
             _ => panic!("No str representation"),
         }
     }
@@ -261,73 +258,67 @@ impl WeakVal {
         Self::NativeFunc(Rc::new(func))
     }
 
-    pub fn repr(&self, symbol_table: &SymbolTable) -> std::string::String {
+    pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => format!(r#""{}""#, unsafe { val.data.as_ref() }),
+            StringVal(val) => format!(r#""{}""#, *heap.deref(val)),
             Symbol(val) => symbol_table[*val].clone(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
-                unsafe {
-                    vals.data.as_ref().iter().for_each(|val| {
-                        res += &val.repr(symbol_table);
-                        res += " ";
-                    });
-                }
+                heap.deref(vals).iter().for_each(|val| {
+                    res += &val.repr(heap, symbol_table);
+                    res += " ";
+                });
                 res += ")";
                 res
             }
             NativeFunc(_) => std::string::String::from("Native function"),
             Func(func) => {
-                let symbol = unsafe { func.data.as_ref().name };
+                let symbol = heap.deref(func).name;
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
         }
     }
 
-    pub fn str(&self, symbol_table: &SymbolTable) -> std::string::String {
+    pub fn str(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => unsafe { val.data.as_ref().clone() },
+            StringVal(val) => heap.deref(val).clone(),
             Symbol(val) => symbol_table[*val].clone(),
-            list @ List(_) => list.repr(symbol_table),
+            list @ List(_) => list.repr(heap, symbol_table),
             NativeFunc(_) => "Native function".to_owned(),
             Func(func) => {
-                let name = unsafe { symbol_table[func.data.as_ref().name].clone() };
+                let name = &symbol_table[heap.deref(func).name];
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),
-            _ => panic!("No str representation"),
         }
     }
 
-    pub fn simple_repr(&self) -> std::string::String {
+    pub fn simple_repr(&self, heap: &Heap) -> std::string::String {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => unsafe { val.data.as_ref().clone() },
+            StringVal(val) => heap.deref(val).clone(),
             Symbol(val) => val.to_string(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
-                unsafe {
-                    vals.data.as_ref().iter().for_each(|val| {
-                        res += &val.simple_repr();
-                        res += " ";
-                    });
-                }
+                heap.deref(vals).iter().for_each(|val| {
+                    res += &val.simple_repr(heap);
+                    res += " ";
+                });
                 res += ")";
                 res
             }
             NativeFunc(_) => "Native function".to_owned(),
             Func(func) => {
-                let name = unsafe { func.data.as_ref().name };
+                let name = heap.deref(func).name;
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),
-            _ => panic!("No str representation"),
         }
     }
 }
