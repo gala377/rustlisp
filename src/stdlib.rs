@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::check_ptr;
 use crate::data::BuiltinSymbols;
+use crate::eval::FuncFrame;
 use crate::{
     data::{Environment, SymbolId, SymbolTableBuilder},
     eval::Interpreter,
@@ -148,19 +149,19 @@ fn print_globals(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
     for (k, v) in &globals.borrow().values {
         let printable = v.repr(&vm.heap, &vm.symbols);
         let symbol = vm.symbols[*k].clone();
-        println!("{}: {}", symbol, printable);
+        println!("\t{:20}|{}", symbol, printable);
     }
     drop_rooted_vec(&mut vm.heap, args);
     RootedVal::nil(&mut vm.heap)
 }
 
 fn assert_impl(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
-    println!("Asserting");
+    // println!("Asserting");
     let message = args.pop().unwrap();
     let func = vm.get_value("eq?").unwrap();
-    print!("Got value for eq? Calling...");
+    // println!("Got value for eq? Calling...");
     let res = vm.call(&func, args);
-    print!("After call");
+    // println!("After call");
     match res {
         RootedVal::Symbol(x) => {
             if x == BuiltinSymbols::True as usize {
@@ -193,20 +194,6 @@ fn plus(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
 }
 
 fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
-    //! todo:
-    //!
-    //! When loading a function from another file if its body
-    //! refers to function which exists in both files then the
-    //! refereed function changes. We need namespaces.
-    //!
-    //! file1.rlp
-    //! (def val 1)
-    //! (def (get-val) val)
-    //!
-    //! file2.rlp
-    //! (def val 5)
-    //! (load "file1.rlp")
-    //! (eq? (get-val) 5) ; that is true and shouldn't be
     assert_eq!(args.len(), 1, "load takes only one argument");
     let arg = args.pop().unwrap();
     match arg {
@@ -227,22 +214,32 @@ fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
             // this kinda works but not really, we need to have a mapping from
             // file to its globals because otherwise after we end here we have no globals
             // to retain after push
-
-            vm.push_context(file_env, Vec::new());
+            vm.push_context(vec![FuncFrame {
+                globals: file_env,
+                locals: None,
+            }]);
             program.into_iter().for_each(|expr| {
                 let res = vm.eval(&expr);
                 res.heap_drop(&mut vm.heap);
             });
 
             // TODO: ugly hack, pls remove this when we have globals properly handled.
-            // we pop laded file globals from the globals stack and add it to the
+            // we pop loaded file globals from the globals stack and add it to the
             // front, so that the last globals are now at the top of the stack
             // but we still retain the globals env so the functions are not
             // garbage collected.
             let ctx = vm.pop_context();
             // todo: we should actually throw on name conflict but we
             // do not have a proper namespacing yet
-            vm.get_globals().update_with(ctx.0.clone());
+            vm.get_globals().update_with(
+                ctx.last()
+                    .expect(
+                        "Globals empty after load. The call stack should never be empty. \
+                     There should always be at least one call frame on the stack",
+                    )
+                    .globals
+                    .clone(),
+            );
             vm.save_context(ctx);
             // end of hack
         }

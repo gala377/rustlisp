@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     data::Environment,
-    eval::SavedCtx,
+    eval::{FuncFrame, SavedCtx},
     runtime::{self, Lambda, WeakVal},
 };
 
@@ -82,7 +82,7 @@ pub trait HeapMarked {
 /// are guaranteed, by the guards sharing and ownership, to be safe.
 ///
 /// When implementing this trait it is users responsibility to
-/// ensure that proper guard instance will be used with each 
+/// ensure that proper guard instance will be used with each
 /// dereference. Not upholding this might result in
 /// undefined behavior.
 pub unsafe trait ScopeGuard {}
@@ -231,19 +231,19 @@ impl HeapEntry {
             None => (),
             Some(ptr) => match &self.header.tag {
                 TypeTag::Lambda => {
-                    println!("Dropping lambda");
+                    // println!("Dropping lambda");
                     safe_drop_and_free::<runtime::Lambda>(ptr.as_ptr());
                 }
                 TypeTag::List => {
-                    println!("Dropping list");
+                    // println!("Dropping list");
                     safe_drop_and_free::<Vec<WeakVal>>(ptr.as_ptr());
                 }
                 TypeTag::RuntimeFunc => {
-                    println!("Dropping function");
+                    // println!("Dropping function");
                     safe_drop_and_free::<runtime::RuntimeFunc>(ptr.as_ptr());
                 }
                 TypeTag::String => {
-                    println!("Dropping string");
+                    // println!("Dropping string");
                     safe_drop_and_free::<String>(ptr.as_ptr());
                 }
                 TypeTag::None => (),
@@ -510,58 +510,64 @@ impl MarkSweep {
     pub fn step(
         &mut self,
         heap: &mut Heap,
-        globals: &Environment,
-        locals: &Vec<Environment>,
+        call_stack: &Vec<FuncFrame>,
         saved_envs: &Vec<SavedCtx>,
     ) {
-        println!("Starting gc");
+        // println!("Starting gc");
         if heap.taken_entries == 0 {
             return;
         }
-        println!("Marking heap");
+        // println!("Marking heap");
         let mut marked = self.traverse_and_mark(heap);
-        println!("Marking locals");
-        for env in locals {
-            self.visit_env(&mut marked, heap, env.clone());
-        }
-        println!("Marking globals");
-        self.visit_env(&mut marked, heap, globals.clone());
-        println!("Marking saved envs");
-        for (glob, loc) in saved_envs {
-            self.visit_env(&mut marked, heap, glob.clone());
-            for env in loc {
-                self.visit_env(&mut marked, heap, env.clone());
-            }
+        // println!("Marking locals");
+        self.visit_call_stack(&mut marked, heap, call_stack);
+        // println!("Marking saved envs");
+        for stack in saved_envs {
+            self.visit_call_stack(&mut marked, heap, stack);
         }
         heap.taken_entries = marked.len();
         heap.vacant_entries = heap.entries.len() - marked.len();
-        println!("Sweeping");
+        // println!("Sweeping");
         self.sweep(heap);
-        println!("Repairing heap pointers");
+        // println!("Repairing heap pointers");
         let mut curr = heap.first_taken;
         while let Some(entry_index) = curr {
             heap.entries[entry_index].header.marked = false;
             curr = heap.entries[entry_index].header.next_node;
         }
 
-        // --------------- debug
-        println!("After repair our chain is");
-        curr = heap.first_taken;
-        let mut chain = 0;
-        let mut last_entry = 0;
-        while let Some(entry_index) = curr {
-            println!("{}", entry_index);
-            if entry_index == last_entry {
-                panic!("We have a cycle!");
-            }
-            last_entry = entry_index;
-            curr = heap.entries[entry_index].header.next_node;
-            chain += 1;
-            if chain > 25 {
-                panic!("Taken chain is too long");
+        // // --------------- debug
+        // println!("After repair our chain is");
+        // curr = heap.first_taken;
+        // let mut chain = 0;
+        // let mut last_entry = 0;
+        // while let Some(entry_index) = curr {
+        //     println!("{}", entry_index);
+        //     if entry_index == last_entry {
+        //         panic!("We have a cycle!");
+        //     }
+        //     last_entry = entry_index;
+        //     curr = heap.entries[entry_index].header.next_node;
+        //     chain += 1;
+        //     if chain > 25 {
+        //         panic!("Taken chain is too long");
+        //     }
+        // }
+        // // -------------------- end debug
+    }
+
+    fn visit_call_stack(
+        &self,
+        marked: &mut BTreeSet<usize>,
+        heap: &mut Heap,
+        call_stack: &Vec<FuncFrame>,
+    ) {
+        for frame in call_stack {
+            self.visit_env(marked, heap, frame.globals.clone());
+            if let Some(locals) = frame.locals.clone() {
+                self.visit_env(marked, heap, locals);
             }
         }
-        // -------------------- end debug
     }
 
     fn traverse_and_mark(&self, heap: &mut Heap) -> BTreeSet<usize> {
@@ -571,7 +577,7 @@ impl MarkSweep {
         const N: usize = 5;
         let mut last_n = Vec::new();
         while let Some(entry_index) = curr {
-            println!("Current index {}", entry_index);
+            // println!("Current index {}", entry_index);
             if last_n.len() < N {
                 last_n.push(entry_index);
             } else {
@@ -583,7 +589,7 @@ impl MarkSweep {
                 }
             }
             if heap.entries[entry_index].header.strong_count > 0 {
-                println!("String count is higher than 0 we enter");
+                // println!("String count is higher than 0 we enter");
                 self.visit_entry(&mut marked, heap, entry_index);
             }
             curr = heap.entries[entry_index].header.next_node;
@@ -727,7 +733,7 @@ fn print_debug_value(heap: &mut Heap, entry_index: usize) {
             format!("[GC] Dropping list: {}", &msg)
         },
     };
-    println!("{}", to_print);
+    // println!("{}", to_print);
 }
 
 #[cfg(test)]

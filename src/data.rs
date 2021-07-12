@@ -30,11 +30,12 @@ impl Environment {
         let inner = other.borrow();
         let self_map = &mut self.borrow_mut().values;
         inner.values.iter().for_each(|(key, val)| {
-            println!("Merging with symbol {}", key);
+            // println!("Merging with symbol {}", key);
             self_map.entry(*key).or_insert(val.clone());
         });
     }
 
+    /// Deep copies the whole environment tree.
     pub fn split(self) -> Environment {
         let inner = self.borrow();
         Self(Rc::new(RefCell::new(EnvironmentImpl {

@@ -11,14 +11,15 @@ pub struct Lambda {
     pub body: Rc<SExpr>,
     pub args: Vec<SymbolId>,
     pub env: Environment,
-    // pub globals: Environment, // todo: add this for proper globals resolution
+    pub globals: Environment,
 }
 
 impl Lambda {
-    fn new(env: Environment, args: Vec<SymbolId>, body: SExpr) -> Self {
+    fn new(env: Environment, args: Vec<SymbolId>, body: SExpr, globals: Environment) -> Self {
         Self {
             env,
             args,
+            globals,
             body: Rc::new(body),
         }
     }
@@ -28,14 +29,15 @@ pub struct RuntimeFunc {
     pub body: Rc<SExpr>,
     pub name: SymbolId,
     pub args: Vec<SymbolId>,
-    // pub globals: Environment, // todo: add this for proper globals resolution
+    pub globals: Environment,
 }
 
 impl RuntimeFunc {
-    fn new(name: SymbolId, args: Vec<SymbolId>, body: SExpr) -> RuntimeFunc {
+    fn new(name: SymbolId, args: Vec<SymbolId>, body: SExpr, globals: Environment) -> RuntimeFunc {
         Self {
             name,
             args,
+            globals,
             body: Rc::new(body),
         }
     }
@@ -154,9 +156,10 @@ impl RootedVal {
         name: SymbolId,
         args: Vec<SymbolId>,
         body: SExpr,
+        globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(RuntimeFunc::new(name, args, body));
+        let inner = heap.allocate(RuntimeFunc::new(name, args, body, globals));
         Self::Func(inner)
     }
 
@@ -164,9 +167,10 @@ impl RootedVal {
         env: Environment,
         args: Vec<SymbolId>,
         body: SExpr,
+        globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(Lambda::new(env, args, body));
+        let inner = heap.allocate(Lambda::new(env, args, body, globals));
         Self::Lambda(inner)
     }
 
