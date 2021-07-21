@@ -30,8 +30,8 @@
     "function ended")
 (print _)
 (myfunc)
-(quote ,(`myfunc print (my smth) 1))
-(print `(,(id 1) ,(id 2) (id (id 3))))
+(print (quote ,(`myfunc print (my smth) 1)))
+(print `(,(id 1) ,(id 2) (id (id ,(id 3))) (id (id 4))))
 
 (def (times2 x) (+ x x))
 

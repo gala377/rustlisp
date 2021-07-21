@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::check_ptr;
+use crate::{check_ptr, runtime};
 use crate::data::BuiltinSymbols;
 use crate::eval::FuncFrame;
 use crate::{
@@ -46,7 +46,7 @@ fn define_prelude_functions(
                 [StringVal(a), StringVal(b)] => {
                     check_ptr!(vm.heap, a);
                     check_ptr!(vm.heap, b);
-                    RootedVal::predicate(*vm.heap.deref(a) == *vm.heap.deref(b))
+                    RootedVal::predicate(*vm.heap.deref_ptr(a) == *vm.heap.deref_ptr(b))
                 }
                 [NumberVal(a), NumberVal(b)] => RootedVal::predicate(a == b),
                 [List(a), List(b)] => RootedVal::predicate(a == b),
@@ -85,7 +85,7 @@ fn define_prelude_functions(
             assert_eq!(args.len(), 1, "null takes one argument");
             let res = if let List(inner) = &args[0] {
                 check_ptr!(vm.heap, inner);
-                RootedVal::predicate(vm.heap.deref(inner).is_empty())
+                RootedVal::predicate(vm.heap.deref_ptr(inner).is_empty())
             } else {
                 panic!("null can only be called on lists");
             };
@@ -107,10 +107,10 @@ fn define_prelude_functions(
             let (list, func) = (args.pop().unwrap(), args.pop().unwrap());
             let res = if let List(list) = list {
                 check_ptr!(vm.heap, list);
-                let len = (vm.heap.deref(&list)).len();
+                let len = (vm.heap.deref_ptr(&list)).len();
                 let mut res = Vec::with_capacity(len);
                 for i in 0..len {
-                    let item = vm.heap.deref(&list)[i].clone();
+                    let item = vm.heap.deref_ptr(&list)[i].clone();
                     let item = item.upgrade(&mut vm.heap);
                     res.push(vm.call(&func, vec![item]));
                 }
@@ -175,7 +175,7 @@ fn assert_impl(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
     match message {
         RootedVal::StringVal(ptr) => {
             check_ptr!(vm.heap, ptr);
-            let msg = vm.heap.deref(&ptr).clone();
+            let msg = vm.heap.deref_ptr(&ptr).clone();
             vm.heap.drop_root(ptr);
             panic!("{}", msg);
         }
@@ -201,7 +201,7 @@ fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
             check_ptr!(vm.heap, path);
             let symbol_table_builder = SymbolTableBuilder::with_symbols(&mut vm.symbols);
             let file_source = {
-                let path = vm.heap.deref(path);
+                let path = vm.heap.deref_ptr(path);
                 println!("the path we load from is {}", *path);
                 std::fs::read_to_string(&*path).unwrap()
             };
@@ -218,11 +218,11 @@ fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
                 globals: file_env,
                 locals: None,
             }]);
-            program.into_iter().for_each(|expr| {
+            program.iter().for_each(|expr| {
                 let res = vm.eval(&expr);
                 res.heap_drop(&mut vm.heap);
             });
-
+            runtime::drop_rooted_vec(&mut vm.heap, program);
             // TODO: ugly hack, pls remove this when we have globals properly handled.
             // we pop loaded file globals from the globals stack and add it to the
             // front, so that the last globals are now at the top of the stack
@@ -262,7 +262,7 @@ fn concatenate_strings(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal 
         args.into_iter().fold(String::new(), |acc, x| match x {
             RootedVal::StringVal(inner) => {
                 check_ptr!(vm.heap, inner);
-                let res = acc + &vm.heap.deref(&inner);
+                let res = acc + &vm.heap.deref_ptr(&inner);
                 vm.heap.drop_root(inner);
                 res
             }
@@ -275,7 +275,7 @@ fn concatenate_strings(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal 
 fn concatenate_lists(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
     let size = args.iter().fold(0, |init, x| {
         init + match x {
-            RootedVal::List(ptr) => vm.heap.deref(ptr).len(),
+            RootedVal::List(ptr) => vm.heap.deref_ptr(ptr).len(),
             _ => panic!("Types mismatched in list concatenation"),
         }
     });
@@ -284,7 +284,7 @@ fn concatenate_lists(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
         match list {
             RootedVal::List(ptr) => {
                 check_ptr!(vm.heap, ptr);
-                let list_ref = vm.heap.deref(ptr);
+                let list_ref = vm.heap.deref_ptr(ptr);
                 init.extend(list_ref.iter().cloned());
             }
             _ => panic!("Types mismatched"),

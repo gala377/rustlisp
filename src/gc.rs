@@ -394,18 +394,18 @@ impl Heap {
         Ptr: ScopedRef<T> + HeapMarked,
     {
         check_ptr!(self, ptr);
-        let mut reference = self.deref_mut(ptr);
+        let mut reference = self.deref_ptr_mut(ptr);
         func(&mut reference)
     }
 
-    pub fn deref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
+    pub fn deref_ptr<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         ScopedPtr {
             value: ptr.scoped_ref(self),
             // guard: self,
         }
     }
 
-    pub fn deref_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
+    pub fn deref_ptr_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         ScopedMutPtr {
             value: ptr.scoped_ref_mut(self),
             // guard: self,
@@ -642,7 +642,7 @@ impl MarkSweep {
     }
 
     fn visit_env(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, env: Environment) {
-        let mut parent = None;
+        let parent;
         {
             let inner = env.borrow();
             for val in inner.values.values() {

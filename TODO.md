@@ -1,8 +1,17 @@
 # todo
 
-1. Globals for lambda and functions for proper symbol resolution when loaded.
-2. Functional tests
+1. Functional tests
+2. Using true lists instead of vectors
 3. More special forms (do we even have condition?)
-4. Namespacing
-5. Objects?
-6. Iterators and coroutines would be so coool
+   1. macros
+      1. If
+      2. When and so on
+   2. let
+   3. condition
+4. Rest arguments in functions
+5. Key-word args?
+6. Gen-sym std-lib
+7.
+8. Namespacing
+9. Objects?
+10. Iterators and coroutines would be so coool

@@ -184,11 +184,16 @@ impl RootedVal {
         Self::StringVal(inner)
     }
 
+    pub fn list(val: Vec<WeakVal>, heap: &mut Heap) -> RootedVal {
+        let inner = heap.allocate(val);
+        Self::List(inner)
+    }
+
     pub fn list_from_rooted(val: Vec<RootedVal>, heap: &mut Heap) -> RootedVal {
         let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::new());
         check_ptr!(heap, inner);
         let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade(heap)).collect();
-        heap.deref_mut(&mut inner).extend(val.into_iter());
+        heap.deref_ptr_mut(&mut inner).extend(val.into_iter());
         Self::List(inner)
     }
 
@@ -203,11 +208,11 @@ impl RootedVal {
         use RootedVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => format!(r#""{}""#, *heap.deref(val)),
+            StringVal(val) => format!(r#""{}""#, *heap.deref_ptr(val)),
             Symbol(val) => symbol_table[*val].clone(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
-                heap.deref(vals).iter().for_each(|val| {
+                heap.deref_ptr(vals).iter().for_each(|val| {
                     res += &val.repr(heap, symbol_table);
                     res += " ";
                 });
@@ -216,7 +221,7 @@ impl RootedVal {
             }
             NativeFunc(_) => std::string::String::from("Native function"),
             Func(func) => {
-                let symbol = heap.deref(func).name;
+                let symbol = heap.deref_ptr(func).name;
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
@@ -227,7 +232,7 @@ impl RootedVal {
         use RootedVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => heap.deref(val).clone(),
+            StringVal(val) => heap.deref_ptr(val).clone(),
             Symbol(val) => symbol_table[*val].clone(),
             list @ List(_) => list.repr(heap, symbol_table),
             _ => panic!("No str representation"),
@@ -267,15 +272,22 @@ impl WeakVal {
         Self::NativeFunc(Rc::new(func))
     }
 
+    pub fn is_symbol(&self, sym: SymbolId) -> bool {
+        match self {
+            WeakVal::Symbol(inner) if *inner == sym => true,
+            _ => false,
+        }
+    }
+
     pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => format!(r#""{}""#, *heap.deref(val)),
+            StringVal(val) => format!(r#""{}""#, *heap.deref_ptr(val)),
             Symbol(val) => symbol_table[*val].clone(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
-                heap.deref(vals).iter().for_each(|val| {
+                heap.deref_ptr(vals).iter().for_each(|val| {
                     res += &val.repr(heap, symbol_table);
                     res += " ";
                 });
@@ -284,7 +296,7 @@ impl WeakVal {
             }
             NativeFunc(_) => std::string::String::from("Native function"),
             Func(func) => {
-                let symbol = heap.deref(func).name;
+                let symbol = heap.deref_ptr(func).name;
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
@@ -295,12 +307,12 @@ impl WeakVal {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => heap.deref(val).clone(),
+            StringVal(val) => heap.deref_ptr(val).clone(),
             Symbol(val) => symbol_table[*val].clone(),
             list @ List(_) => list.repr(heap, symbol_table),
             NativeFunc(_) => "Native function".to_owned(),
             Func(func) => {
-                let name = &symbol_table[heap.deref(func).name];
+                let name = &symbol_table[heap.deref_ptr(func).name];
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),
@@ -311,11 +323,11 @@ impl WeakVal {
         use WeakVal::*;
         match self {
             NumberVal(val) => val.to_string(),
-            StringVal(val) => heap.deref(val).clone(),
+            StringVal(val) => heap.deref_ptr(val).clone(),
             Symbol(val) => val.to_string(),
             List(vals) => {
                 let mut res = std::string::String::from("(");
-                heap.deref(vals).iter().for_each(|val| {
+                heap.deref_ptr(vals).iter().for_each(|val| {
                     res += &val.simple_repr(heap);
                     res += " ";
                 });
@@ -324,7 +336,7 @@ impl WeakVal {
             }
             NativeFunc(_) => "Native function".to_owned(),
             Func(func) => {
-                let name = heap.deref(func).name;
+                let name = heap.deref_ptr(func).name;
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),

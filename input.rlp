@@ -16,6 +16,7 @@
 (print "BEFORE FIRST ASSERT")
 (assert 1 1 "Should pass")
 (print "AFTER FIRST ASSERT")
+(exported "dupa")
 (print "AFTER SECOND ASSERT")
 (print-globals)
 (my-func (to-str CONST-VAL))
