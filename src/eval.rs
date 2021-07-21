@@ -2,7 +2,7 @@ use core::panic;
 use std::convert::TryInto;
 
 use crate::check_ptr;
-use crate::data::{BuiltinSymbols, Environment, SExpr, SymbolId, SymbolTable};
+use crate::data::{BuiltinSymbols, Environment, SymbolId, SymbolTable};
 use crate::gc::{Heap, HeapMarked, MarkSweep};
 use crate::runtime::{drop_rooted_vec, RootedVal};
 use crate::utils::JoinedIterator;

@@ -4,11 +4,7 @@ use std::{
     ptr,
 };
 
-use crate::{
-    data::Environment,
-    eval::{FuncFrame, SavedCtx},
-    runtime::{self, Lambda, WeakVal},
-};
+use crate::{data::Environment, eval::{FuncFrame, SavedCtx}, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
@@ -607,16 +603,25 @@ impl MarkSweep {
         let walk_function = match header.tag {
             TypeTag::List => Self::visit_list,
             TypeTag::Lambda => Self::visit_lambda,
+            TypeTag::RuntimeFunc => Self::visit_func,
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
-            TypeTag::None | TypeTag::RuntimeFunc | TypeTag::String => {
+            TypeTag::None | TypeTag::String => {
                 return;
             }
         };
         walk_function(self, marked, heap, entry_index);
     }
 
+    fn visit_func(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+        // todo: remove unsafe usage here
+        let func_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const RuntimeFunc;
+        let func_ref = unsafe { func_ref.as_ref().unwrap() };
+        self.visit_weak_val(marked, heap, &func_ref.body);
+    }
+
     fn visit_list(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+        // todo: remove unsafe usage here
         let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<WeakVal>;
         let list_ref = unsafe { list_ref.as_ref().unwrap() };
         list_ref
@@ -625,13 +630,14 @@ impl MarkSweep {
     }
 
     fn visit_lambda(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+        // todo: remove unsafe usage here
         let lambda_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Lambda;
         let lambda_ref = unsafe { lambda_ref.as_ref().unwrap() };
-        self.visit_env(marked, heap, lambda_ref.env.clone())
+        self.visit_env(marked, heap, lambda_ref.env.clone());
+        self.visit_weak_val(marked, heap, &lambda_ref.body);
     }
 
     fn visit_env(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, env: Environment) {
-        #[allow(unused_assignments)]
         let mut parent = None;
         {
             let inner = env.borrow();

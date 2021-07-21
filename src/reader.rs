@@ -1,4 +1,4 @@
-use crate::data::{BuiltinSymbols, SExpr, SymbolId, SymbolTableBuilder};
+use crate::{data::{BuiltinSymbols, SymbolId, SymbolTableBuilder}, gc::Heap, runtime::{self, RootedVal, WeakVal}};
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -52,25 +52,25 @@ fn tokenize(source: &str) -> Vec<Token> {
 /// Additional symbol table is provided with all the symbols that were found
 /// during parsing and all symbols denoting special forms.
 pub struct AST {
-    pub program: Vec<SExpr>,
+    pub program: Vec<RootedVal>,
     pub symbol_table_builder: SymbolTableBuilder,
 }
 
 /// Parses source code passed as a string.
 /// Successful parsing returns unevaluated AST struct.
-pub fn read(source: &str) -> Result<AST, ParseError> {
+pub fn read(source: &str, heap: &mut Heap) -> Result<AST, ParseError> {
     let tokens = tokenize(source);
     let mut symbol_table_builder = SymbolTableBuilder::builtin();
-    let program = parse_program(tokens.into_iter(), &mut symbol_table_builder)?;
+    let program = parse_program(tokens.into_iter(), heap, &mut symbol_table_builder)?;
     Ok(AST {
         program,
         symbol_table_builder,
     })
 }
 
-pub fn load(source: &str, mut symbol_table_builder: SymbolTableBuilder) -> Result<AST, ParseError> {
+pub fn load(source: &str, heap: &mut Heap, mut symbol_table_builder: SymbolTableBuilder) -> Result<AST, ParseError> {
     let tokens = tokenize(source);
-    let program = parse_program(tokens.into_iter(), &mut symbol_table_builder)?;
+    let program = parse_program(tokens.into_iter(), heap, &mut symbol_table_builder)?;
     Ok(AST {
         program,
         symbol_table_builder,
@@ -79,15 +79,16 @@ pub fn load(source: &str, mut symbol_table_builder: SymbolTableBuilder) -> Resul
 
 fn parse_program<It>(
     mut curr_atom: It,
+    heap: &mut Heap,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<Vec<SExpr>, ParseError>
+) -> Result<Vec<RootedVal>, ParseError>
 where
     It: Iterator<Item = Token>,
 {
     let mut prog = Vec::new();
     while let Some(atom) = curr_atom.next() {
         match atom {
-            Token::LeftBracket => prog.push(parse_list(&mut curr_atom, symbol_table_builder)?),
+            Token::LeftBracket => prog.push(parse_list(&mut curr_atom, heap, symbol_table_builder)?),
             _ => return Err(ParseError::UnexpectedAtom),
         }
     }
@@ -96,19 +97,20 @@ where
 
 fn parse_expr<It>(
     curr_atom: &mut It,
+    heap: &mut Heap,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<SExpr, ParseError>
+) -> Result<RootedVal, ParseError>
 where
     It: Iterator<Item = Token>,
 {
     if let Some(atom) = curr_atom.next() {
         match atom {
-            Token::LeftBracket => parse_list(curr_atom, symbol_table_builder),
-            Token::Quote => parse_string(curr_atom),
+            Token::LeftBracket => parse_list(curr_atom, heap, symbol_table_builder),
+            Token::Quote => parse_string(curr_atom, heap),
             Token::Val(val) => parse_atom(val, symbol_table_builder),
-            Token::SymbolQuote => parse_quote(curr_atom, symbol_table_builder),
-            Token::QuasiQuote => parse_quasiquote(curr_atom, symbol_table_builder),
-            Token::Unquote => parse_unquote(curr_atom, symbol_table_builder),
+            Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table_builder),
+            Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table_builder),
+            Token::Unquote => parse_unquote(curr_atom, heap, symbol_table_builder),
             _ => Err(ParseError::UnexpectedClosingParenthesis),
         }
     } else {
@@ -118,27 +120,28 @@ where
 
 fn parse_list<It>(
     curr_atom: &mut It,
+    heap: &mut Heap,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<SExpr, ParseError>
+) -> Result<RootedVal, ParseError>
 where
     It: Iterator<Item = Token>,
 {
     let mut list = Vec::new();
     while let Some(atom) = curr_atom.next() {
         list.push(match atom {
-            Token::RightBracket => return Ok(SExpr::List(list)),
-            Token::LeftBracket => parse_list(curr_atom, symbol_table_builder)?,
-            Token::Quote => parse_string(curr_atom)?,
+            Token::RightBracket => return Ok(RootedVal::list_from_rooted(list, heap)),
+            Token::LeftBracket => parse_list(curr_atom, heap, symbol_table_builder)?,
+            Token::Quote => parse_string(curr_atom, heap)?,
             Token::Val(val) => parse_atom(val, symbol_table_builder)?,
-            Token::SymbolQuote => parse_quote(curr_atom, symbol_table_builder)?,
-            Token::Unquote => parse_unquote(curr_atom, symbol_table_builder)?,
-            Token::QuasiQuote => parse_quasiquote(curr_atom, symbol_table_builder)?,
+            Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table_builder)?,
+            Token::Unquote => parse_unquote(curr_atom, heap, symbol_table_builder)?,
+            Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table_builder)?,
         });
     }
     Err(ParseError::UnclosedList)
 }
 
-fn parse_string<It>(curr_atom: &mut It) -> Result<SExpr, ParseError>
+fn parse_string<It>(curr_atom: &mut It, heap: &mut Heap) -> Result<RootedVal, ParseError>
 where
     It: Iterator<Item = Token>,
 {
@@ -158,56 +161,59 @@ where
         };
         res.push(' ');
     }
-    Ok(SExpr::LitString(res))
+    Ok(RootedVal::string(res, heap))
 }
 
 fn parse_quote<It>(
     curr_atom: &mut It,
+    heap: &mut Heap,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<SExpr, ParseError>
+) -> Result<RootedVal, ParseError>
 where
     It: Iterator<Item = Token>,
 {
-    Ok(SExpr::List(vec![
-        SExpr::Symbol(BuiltinSymbols::Quote as SymbolId),
-        parse_expr(curr_atom, symbol_table_builder)?,
-    ]))
+    Ok(RootedVal::list_from_rooted(vec![
+        RootedVal::Symbol(BuiltinSymbols::Quote as SymbolId),
+        parse_expr(curr_atom, heap, symbol_table_builder)?,
+    ], heap))
 }
 
 fn parse_quasiquote<It>(
     curr_atom: &mut It,
+    heap: &mut Heap,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<SExpr, ParseError>
+) -> Result<RootedVal, ParseError>
 where
     It: Iterator<Item = Token>,
 {
-    Ok(SExpr::List(vec![
-        SExpr::Symbol(BuiltinSymbols::Quasiquote as SymbolId),
-        parse_expr(curr_atom, symbol_table_builder)?,
-    ]))
+    Ok(RootedVal::list_from_rooted(vec![
+        RootedVal::Symbol(BuiltinSymbols::Quasiquote as SymbolId),
+        parse_expr(curr_atom, heap, symbol_table_builder)?,
+    ], heap))
 }
 
 fn parse_unquote<It>(
     curr_atom: &mut It,
+    heap: &mut Heap,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<SExpr, ParseError>
+) -> Result<RootedVal, ParseError>
 where
     It: Iterator<Item = Token>,
 {
-    Ok(SExpr::List(vec![
-        SExpr::Symbol(BuiltinSymbols::Unquote as SymbolId),
-        parse_expr(curr_atom, symbol_table_builder)?,
-    ]))
+    Ok(RootedVal::list_from_rooted(vec![
+        RootedVal::Symbol(BuiltinSymbols::Unquote as SymbolId),
+        parse_expr(curr_atom, heap, symbol_table_builder)?,
+    ], heap))
 }
 
 fn parse_atom(
     curr_atom: String,
     symbol_table_builder: &mut SymbolTableBuilder,
-) -> Result<SExpr, ParseError> {
+) -> Result<RootedVal, ParseError> {
     // `parse` resolves to `f64`.
     // It also handles negative numbers.
     match curr_atom.parse() {
-        Ok(val) => Ok(SExpr::LitNumber(val)),
-        Err(_) => Ok(SExpr::Symbol(symbol_table_builder.put_symbol(curr_atom))),
+        Ok(val) => Ok(RootedVal::NumberVal(val)),
+        Err(_) => Ok(RootedVal::Symbol(symbol_table_builder.put_symbol(curr_atom))),
     }
 }

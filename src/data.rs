@@ -1,14 +1,6 @@
 use crate::runtime::WeakVal;
 use std::{cell::RefCell, collections::HashMap, convert::TryFrom, rc::Rc};
 
-#[derive(Clone)]
-pub enum SExpr {
-    LitNumber(f64),
-    LitString(String),
-    Symbol(SymbolId),
-    List(Vec<SExpr>),
-}
-
 pub struct EnvironmentImpl {
     pub parent: Option<Environment>,
     pub values: HashMap<SymbolId, WeakVal>,

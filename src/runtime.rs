@@ -1,44 +1,44 @@
 use crate::{
     check_ptr,
     data::BuiltinSymbols,
-    data::{Environment, SExpr, SymbolId, SymbolTable},
+    data::{Environment, SymbolId, SymbolTable},
     eval::Interpreter,
     gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag},
 };
 use std::rc::Rc;
 
 pub struct Lambda {
-    pub body: Rc<SExpr>,
+    pub body: WeakVal,
     pub args: Vec<SymbolId>,
     pub env: Environment,
     pub globals: Environment,
 }
 
 impl Lambda {
-    fn new(env: Environment, args: Vec<SymbolId>, body: SExpr, globals: Environment) -> Self {
+    fn new(env: Environment, args: Vec<SymbolId>, body: WeakVal, globals: Environment) -> Self {
         Self {
             env,
             args,
             globals,
-            body: Rc::new(body),
+            body,
         }
     }
 }
 
 pub struct RuntimeFunc {
-    pub body: Rc<SExpr>,
+    pub body: WeakVal,
     pub name: SymbolId,
     pub args: Vec<SymbolId>,
     pub globals: Environment,
 }
 
 impl RuntimeFunc {
-    fn new(name: SymbolId, args: Vec<SymbolId>, body: SExpr, globals: Environment) -> RuntimeFunc {
+    fn new(name: SymbolId, args: Vec<SymbolId>, body: WeakVal, globals: Environment) -> RuntimeFunc {
         Self {
             name,
             args,
             globals,
-            body: Rc::new(body),
+            body,
         }
     }
 }
@@ -155,7 +155,7 @@ impl RootedVal {
     pub fn function(
         name: SymbolId,
         args: Vec<SymbolId>,
-        body: SExpr,
+        body: WeakVal,
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
@@ -166,7 +166,7 @@ impl RootedVal {
     pub fn lambda(
         env: Environment,
         args: Vec<SymbolId>,
-        body: SExpr,
+        body: WeakVal,
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
