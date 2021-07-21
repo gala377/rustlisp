@@ -208,7 +208,7 @@ fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
             let AST {
                 program,
                 mut symbol_table_builder,
-            } = reader::load(&file_source, symbol_table_builder).unwrap();
+            } = reader::load(&file_source, &mut vm.heap, symbol_table_builder).unwrap();
             let file_env = stdlib::std_env(&mut symbol_table_builder);
             symbol_table_builder.update_table(&mut vm.symbols);
             // this kinda works but not really, we need to have a mapping from
