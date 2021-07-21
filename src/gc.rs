@@ -708,7 +708,7 @@ impl MarkSweep {
 
 fn print_debug_value(heap: &mut Heap, entry_index: usize) {
     let entry = &heap.entries[entry_index];
-    let to_print = match entry.header.tag {
+    let _to_print = match entry.header.tag {
         TypeTag::Lambda => "[GC] Lambda is dropped".to_owned(),
         TypeTag::None => "[GC] No type tag for the value".to_owned(),
         TypeTag::RuntimeFunc => unsafe {

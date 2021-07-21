@@ -5,6 +5,7 @@ use crate::check_ptr;
 use crate::data::{BuiltinSymbols, Environment, SExpr, SymbolId, SymbolTable};
 use crate::gc::{Heap, HeapMarked, MarkSweep};
 use crate::runtime::{drop_rooted_vec, RootedVal};
+use crate::utils::JoinedIterator;
 
 type Env = Environment;
 
@@ -346,7 +347,7 @@ fn populate_env(
     );
     {
         let func_env_map = &mut env.borrow_mut().values;
-        for (name, val) in args.iter().zip(values.into_iter()) {
+        for (name, val) in (args, values).zip() {
             func_env_map.insert(name.clone(), val.downgrade(heap));
         }
     }
