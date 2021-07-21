@@ -1,4 +1,8 @@
-use crate::{data::{BuiltinSymbols, SymbolId, SymbolTableBuilder}, gc::Heap, runtime::{self, RootedVal, WeakVal}};
+use crate::{
+    data::{BuiltinSymbols, SymbolId, SymbolTableBuilder},
+    gc::Heap,
+    runtime::RootedVal,
+};
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -68,7 +72,11 @@ pub fn read(source: &str, heap: &mut Heap) -> Result<AST, ParseError> {
     })
 }
 
-pub fn load(source: &str, heap: &mut Heap, mut symbol_table_builder: SymbolTableBuilder) -> Result<AST, ParseError> {
+pub fn load(
+    source: &str,
+    heap: &mut Heap,
+    mut symbol_table_builder: SymbolTableBuilder,
+) -> Result<AST, ParseError> {
     let tokens = tokenize(source);
     let program = parse_program(tokens.into_iter(), heap, &mut symbol_table_builder)?;
     Ok(AST {
@@ -88,7 +96,9 @@ where
     let mut prog = Vec::new();
     while let Some(atom) = curr_atom.next() {
         match atom {
-            Token::LeftBracket => prog.push(parse_list(&mut curr_atom, heap, symbol_table_builder)?),
+            Token::LeftBracket => {
+                prog.push(parse_list(&mut curr_atom, heap, symbol_table_builder)?)
+            }
             _ => return Err(ParseError::UnexpectedAtom),
         }
     }
@@ -172,10 +182,13 @@ fn parse_quote<It>(
 where
     It: Iterator<Item = Token>,
 {
-    Ok(RootedVal::list_from_rooted(vec![
-        RootedVal::Symbol(BuiltinSymbols::Quote as SymbolId),
-        parse_expr(curr_atom, heap, symbol_table_builder)?,
-    ], heap))
+    Ok(RootedVal::list_from_rooted(
+        vec![
+            RootedVal::Symbol(BuiltinSymbols::Quote as SymbolId),
+            parse_expr(curr_atom, heap, symbol_table_builder)?,
+        ],
+        heap,
+    ))
 }
 
 fn parse_quasiquote<It>(
@@ -186,10 +199,13 @@ fn parse_quasiquote<It>(
 where
     It: Iterator<Item = Token>,
 {
-    Ok(RootedVal::list_from_rooted(vec![
-        RootedVal::Symbol(BuiltinSymbols::Quasiquote as SymbolId),
-        parse_expr(curr_atom, heap, symbol_table_builder)?,
-    ], heap))
+    Ok(RootedVal::list_from_rooted(
+        vec![
+            RootedVal::Symbol(BuiltinSymbols::Quasiquote as SymbolId),
+            parse_expr(curr_atom, heap, symbol_table_builder)?,
+        ],
+        heap,
+    ))
 }
 
 fn parse_unquote<It>(
@@ -200,10 +216,13 @@ fn parse_unquote<It>(
 where
     It: Iterator<Item = Token>,
 {
-    Ok(RootedVal::list_from_rooted(vec![
-        RootedVal::Symbol(BuiltinSymbols::Unquote as SymbolId),
-        parse_expr(curr_atom, heap, symbol_table_builder)?,
-    ], heap))
+    Ok(RootedVal::list_from_rooted(
+        vec![
+            RootedVal::Symbol(BuiltinSymbols::Unquote as SymbolId),
+            parse_expr(curr_atom, heap, symbol_table_builder)?,
+        ],
+        heap,
+    ))
 }
 
 fn parse_atom(
@@ -214,6 +233,8 @@ fn parse_atom(
     // It also handles negative numbers.
     match curr_atom.parse() {
         Ok(val) => Ok(RootedVal::NumberVal(val)),
-        Err(_) => Ok(RootedVal::Symbol(symbol_table_builder.put_symbol(curr_atom))),
+        Err(_) => Ok(RootedVal::Symbol(
+            symbol_table_builder.put_symbol(curr_atom),
+        )),
     }
 }

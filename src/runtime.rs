@@ -33,7 +33,12 @@ pub struct RuntimeFunc {
 }
 
 impl RuntimeFunc {
-    fn new(name: SymbolId, args: Vec<SymbolId>, body: WeakVal, globals: Environment) -> RuntimeFunc {
+    fn new(
+        name: SymbolId,
+        args: Vec<SymbolId>,
+        body: WeakVal,
+        globals: Environment,
+    ) -> RuntimeFunc {
         Self {
             name,
             args,

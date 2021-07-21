@@ -4,7 +4,11 @@ use std::{
     ptr,
 };
 
-use crate::{data::Environment, eval::{FuncFrame, SavedCtx}, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
+use crate::{
+    data::Environment,
+    eval::{FuncFrame, SavedCtx},
+    runtime::{self, Lambda, RuntimeFunc, WeakVal},
+};
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
