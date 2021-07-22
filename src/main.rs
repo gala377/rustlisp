@@ -1,11 +1,6 @@
 use std::env;
 
-use lispylib::{
-    self,
-    gc::{Heap, MarkSweep},
-    runtime::drop_rooted_vec,
-    Interpreter,
-};
+use lispylib;
 
 fn get_file_name(args: Vec<String>) -> String {
     match args.len() {
@@ -18,20 +13,7 @@ fn get_file_name(args: Vec<String>) -> String {
 fn main() -> Result<(), lispylib::ParseError> {
     let filename = get_file_name(env::args().collect());
     let source_code = std::fs::read_to_string(filename).unwrap();
-    let mut heap = Heap::with_capacity(1000);
-    let lispylib::AST {
-        program,
-        mut symbol_table_builder,
-    } = lispylib::read(&source_code, &mut heap)?;
-    print!("\n\n\n");
-    let env = lispylib::stdlib::std_env(&mut symbol_table_builder);
-    let symbol_table = symbol_table_builder.build();
-    let gc = MarkSweep::new();
-    let mut interp = Interpreter::new(heap, gc, env, None, symbol_table);
-    for expr in &program {
-        let res = interp.eval(expr);
-        res.heap_drop(&mut interp.heap);
-    }
-    drop_rooted_vec(&mut interp.heap, program);
+    let mut vm = lispylib::Vm::new();
+    vm.interpret(&source_code);
     Ok(())
 }
