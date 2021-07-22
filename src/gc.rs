@@ -1,12 +1,12 @@
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap},
     ops::{Deref, DerefMut},
     ptr,
 };
 
 use crate::{
     data::Environment,
-    eval::{FuncFrame, SavedCtx},
+    eval::{FuncFrame, Interpreter, ModuleState, SavedCtx},
     runtime::{self, Lambda, RuntimeFunc, WeakVal},
 };
 
@@ -543,48 +543,43 @@ impl MarkSweep {
         heap: &mut Heap,
         call_stack: &Vec<FuncFrame>,
         saved_envs: &Vec<SavedCtx>,
+        modules: &HashMap<String, ModuleState>,
     ) {
-        // println!("Starting gc");
-        if heap.taken_entries == 0 {
-            return;
-        }
-        // println!("Marking heap");
-        let mut marked = self.traverse_and_mark(heap);
-        // println!("Marking locals");
-        self.visit_call_stack(&mut marked, heap, call_stack);
-        // println!("Marking saved envs");
-        for stack in saved_envs {
-            self.visit_call_stack(&mut marked, heap, stack);
-        }
-        heap.taken_entries = marked.len();
-        heap.vacant_entries = heap.entries.len() - marked.len();
-        // println!("Sweeping");
+        self.mark(heap, call_stack, saved_envs, modules);
         self.sweep(heap);
-        // println!("Repairing heap pointers");
         let mut curr = heap.first_taken;
         while let Some(entry_index) = curr {
             heap.entries[entry_index].header.marked = false;
             curr = heap.entries[entry_index].header.next_node;
         }
+    }
 
-        // // --------------- debug
-        // println!("After repair our chain is");
-        // curr = heap.first_taken;
-        // let mut chain = 0;
-        // let mut last_entry = 0;
-        // while let Some(entry_index) = curr {
-        //     println!("{}", entry_index);
-        //     if entry_index == last_entry {
-        //         panic!("We have a cycle!");
-        //     }
-        //     last_entry = entry_index;
-        //     curr = heap.entries[entry_index].header.next_node;
-        //     chain += 1;
-        //     if chain > 25 {
-        //         panic!("Taken chain is too long");
-        //     }
-        // }
-        // // -------------------- end debug
+    fn mark(
+        &mut self,
+        heap: &mut Heap,
+        call_stack: &Vec<FuncFrame>,
+        saved_envs: &Vec<SavedCtx>,
+        modules: &HashMap<String, ModuleState>,
+    ) {
+        if heap.taken_entries == 0 {
+            return;
+        }
+        // mark roots
+        let mut marked = self.traverse_and_mark(heap);
+        // call stack
+        self.visit_call_stack(&mut marked, heap, call_stack);
+        // saved call stacks
+        for stack in saved_envs {
+            self.visit_call_stack(&mut marked, heap, stack);
+        }
+        // modules
+        for (_, module_state) in modules.iter() {
+            if let ModuleState::Evaluated(module_env) = module_state {
+                self.visit_env(&mut marked, heap, module_env.clone());
+            }
+        }
+        heap.taken_entries = marked.len();
+        heap.vacant_entries = heap.entries.len() - marked.len();
     }
 
     fn visit_call_stack(

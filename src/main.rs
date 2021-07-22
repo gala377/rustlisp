@@ -12,8 +12,8 @@ fn get_file_name(args: Vec<String>) -> String {
 
 fn main() -> Result<(), lispylib::ParseError> {
     let filename = get_file_name(env::args().collect());
-    let source_code = std::fs::read_to_string(filename).unwrap();
-    let mut vm = lispylib::Vm::new();
+    let source_code = std::fs::read_to_string(&filename).unwrap();
+    let mut vm = lispylib::Vm::new(&filename);
     vm.interpret(&source_code);
     Ok(())
 }

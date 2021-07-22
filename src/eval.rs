@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::convert::TryInto;
 
 use crate::check_ptr;
@@ -17,12 +18,17 @@ pub struct FuncFrame {
     pub locals: Option<Env>,
 }
 
+pub enum ModuleState {
+    Evaluated(Env),
+    Evaluating,
+}
+
 pub struct Interpreter {
     pub heap: Heap,
     pub gc: MarkSweep,
-    // todo: implement proper globals stack
     pub call_stack: Vec<FuncFrame>,
     pub symbols: SymbolTable,
+    pub modules: HashMap<String, ModuleState>,
     pub saved_ctxs: Vec<SavedCtx>,
 }
 
@@ -33,11 +39,15 @@ impl Interpreter {
         globals: Env,
         locals: Option<Env>,
         symbols: SymbolTable,
+        main_module_name: &str,
     ) -> Self {
+        let mut modules = HashMap::new();
+        modules.insert(main_module_name.into(), ModuleState::Evaluating);
         Self {
             heap,
             gc,
             symbols,
+            modules,
             call_stack: vec![FuncFrame { globals, locals }],
             saved_ctxs: Vec::new(),
         }
@@ -202,6 +212,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::Quasiquote) => Ok(self.eval_quasiquote(vals)),
             Ok(BuiltinSymbols::Unquote) => panic!("Unquote in not quasiquoted context"),
             Ok(BuiltinSymbols::Lambda) => Ok(self.eval_lambda(vals)),
+            Ok(BuiltinSymbols::If) => Ok(self.eval_if(vals)),
             _ => Err(NotSpecialForm),
         }
     }
@@ -391,6 +402,31 @@ impl Interpreter {
         }
     }
 
+    fn eval_if<Ptr>(&mut self, expr: &Ptr) -> RootedVal
+    where
+        Ptr: ScopedRef<Vec<WeakVal>>,
+    {
+        assert_eq!(
+            self.heap.deref_ptr(expr).len(),
+            4,
+            "If has to have condition and two clauses"
+        );
+        let (predicate, if_true, if_false) = {
+            let predicate = self.heap.deref_ptr(expr)[1].clone();
+            let if_true = self.heap.deref_ptr(expr)[2].clone();
+            let if_false = self.heap.deref_ptr(expr)[3].clone();
+            (predicate, if_true, if_false)
+        };
+        let res = self.eval_weak(&predicate);
+        let eval_next = match res {
+            RootedVal::Symbol(val) if val == BuiltinSymbols::True as SymbolId => if_true,
+            RootedVal::Symbol(val) if val == BuiltinSymbols::False as SymbolId => if_false,
+            _ => panic!("If predicate needs to eval to #t or #f"),
+        };
+        res.heap_drop(&mut self.heap);
+        self.eval_weak(&eval_next)
+    }
+
     pub fn get_globals(&self) -> Env {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
@@ -401,12 +437,6 @@ impl Interpreter {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
         self.call_stack.last().unwrap().locals.clone()
-    }
-
-    pub fn save_context(&mut self, ctx: SavedCtx) {
-        // TODO: Remove this function and in place
-        // put proper module handling
-        self.saved_ctxs.insert(0, ctx);
     }
 
     pub fn push_context(&mut self, call_stack: Vec<FuncFrame>) {
@@ -420,8 +450,12 @@ impl Interpreter {
     }
 
     pub fn run_gc(&mut self) {
-        self.gc
-            .step(&mut self.heap, &self.call_stack, &self.saved_ctxs);
+        self.gc.step(
+            &mut self.heap,
+            &mut self.call_stack,
+            &mut self.saved_ctxs,
+            &mut self.modules,
+        );
     }
 
     pub fn get_value(&mut self, name: &str) -> Option<RootedVal> {

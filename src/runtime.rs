@@ -238,6 +238,13 @@ impl RootedVal {
             _ => panic!("No str representation"),
         }
     }
+
+    pub fn is_symbol(&self, sym: SymbolId) -> bool {
+        match self {
+            RootedVal::Symbol(inner) => *inner == sym,
+            _ => false,
+        }
+    }
 }
 
 #[derive(Clone)]

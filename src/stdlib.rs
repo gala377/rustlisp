@@ -1,16 +1,15 @@
 use std::collections::HashMap;
 
+use crate::check_ptr;
 use crate::data::BuiltinSymbols;
-use crate::eval::FuncFrame;
-use crate::{check_ptr, runtime};
 use crate::{
     data::{Environment, SymbolId, SymbolTableBuilder},
     eval::Interpreter,
     gc::HeapMarked,
-    reader::{self, AST},
     runtime::{drop_rooted_vec, RootedVal, WeakVal},
-    stdlib,
 };
+
+mod load;
 
 macro_rules! def_func {
     ($map:ident, $symbols:ident, $name:literal, $lambda:expr) => {
@@ -27,13 +26,17 @@ macro_rules! def_functions {
     };
 }
 
-pub fn std_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
+pub fn native_std_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
     let mut env = Environment::new();
-    define_prelude_functions(&mut env.borrow_mut().values, symbol_table);
+    define_native_functions_functions(&mut env.borrow_mut().values, symbol_table);
     env
 }
 
-fn define_prelude_functions(
+pub fn load_non_native_std_env(vm: &mut Interpreter) {
+    load::load_from_file(vm, "stdlib/lib.rlp".into(), false);
+}
+
+fn define_native_functions_functions(
     map: &mut HashMap<SymbolId, WeakVal>,
     symbol_table: &mut SymbolTableBuilder,
 ) {
@@ -122,7 +125,32 @@ fn define_prelude_functions(
             func.heap_drop(&mut vm.heap);
             res
         },
-
+        "head" => |vm, mut args| {
+            assert_eq!(args.len(), 1, "head takes one argument");
+            let list = args.pop().unwrap();
+            if let List(list) = list {
+                assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take head from empty list");
+                let val = vm.heap.deref_ptr(&list)[0].clone();
+                let res = val.upgrade(&mut vm.heap);
+                drop_rooted_vec(&mut vm.heap, args);
+                res
+            } else {
+                panic!("you can only use head on a lists");
+            }
+        },
+        "tail" => |vm, mut args| {
+            assert_eq!(args.len(), 1, "tail takes one argument");
+            let list = args.pop().unwrap();
+            if let List(list) = list {
+                assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take tail from empty list");
+                let tail = vm.heap.deref_ptr(&list).iter().skip(1).cloned().collect();
+                let res = RootedVal::list(tail, &mut vm.heap);
+                drop_rooted_vec(&mut vm.heap, args);
+                res
+            } else {
+                panic!("you can only use head on a lists");
+            }
+        },
         // io
         "print" => |vm, args| {
             args.into_iter().for_each(|x| {
@@ -137,7 +165,8 @@ fn define_prelude_functions(
             std::io::stdin().read_line(&mut input).unwrap();
             RootedVal::string(input, &mut vm.heap)
         },
-        "load" => load_from_file,
+        "load" => load::load_from_file_rt_wrapper,
+        "__load" => load::load_from_file_without_std_env_rt_wrapper,
         "assert" => assert_impl,
         "print-globals" => print_globals,
     });
@@ -191,63 +220,6 @@ fn plus(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
         RootedVal::StringVal(_) => concatenate_strings(vm, args),
         _ => panic!("You can only add lists, numbers or strings"),
     }
-}
-
-fn load_from_file(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
-    assert_eq!(args.len(), 1, "load takes only one argument");
-    let arg = args.pop().unwrap();
-    match arg {
-        RootedVal::StringVal(ref path) => {
-            check_ptr!(vm.heap, path);
-            let symbol_table_builder = SymbolTableBuilder::with_symbols(&mut vm.symbols);
-            let file_source = {
-                let path = vm.heap.deref_ptr(path);
-                println!("the path we load from is {}", *path);
-                std::fs::read_to_string(&*path).unwrap()
-            };
-            let AST {
-                program,
-                mut symbol_table_builder,
-            } = reader::load(&file_source, &mut vm.heap, symbol_table_builder).unwrap();
-            let file_env = stdlib::std_env(&mut symbol_table_builder);
-            symbol_table_builder.update_table(&mut vm.symbols);
-            // this kinda works but not really, we need to have a mapping from
-            // file to its globals because otherwise after we end here we have no globals
-            // to retain after push
-            vm.push_context(vec![FuncFrame {
-                globals: file_env,
-                locals: None,
-            }]);
-            program.iter().for_each(|expr| {
-                let res = vm.eval(&expr);
-                res.heap_drop(&mut vm.heap);
-            });
-            runtime::drop_rooted_vec(&mut vm.heap, program);
-            // TODO: ugly hack, pls remove this when we have globals properly handled.
-            // we pop loaded file globals from the globals stack and add it to the
-            // front, so that the last globals are now at the top of the stack
-            // but we still retain the globals env so the functions are not
-            // garbage collected.
-            let ctx = vm.pop_context();
-            // todo: we should actually throw on name conflict but we
-            // do not have a proper namespacing yet
-            vm.get_globals().update_with(
-                ctx.last()
-                    .expect(
-                        "Globals empty after load. The call stack should never be empty. \
-                     There should always be at least one call frame on the stack",
-                    )
-                    .globals
-                    .clone(),
-            );
-            vm.save_context(ctx);
-            // end of hack
-        }
-        _ => panic!("illegal form of load"),
-    }
-    arg.heap_drop(&mut vm.heap);
-    drop_rooted_vec(&mut vm.heap, args);
-    RootedVal::nil(&mut vm.heap)
 }
 
 fn add_numbers(_vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {

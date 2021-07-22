@@ -1,0 +1,4 @@
+
+(def #t '#t)
+(def #f '#f)
+(def nil '())

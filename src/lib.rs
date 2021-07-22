@@ -13,14 +13,16 @@ pub struct Vm {
 }
 
 impl Vm {
-    pub fn new() -> Self {
+    pub fn new(module: &str) -> Self {
         let heap = gc::Heap::with_capacity(10000);
         let mut symbol_table_builder = data::SymbolTableBuilder::builtin();
-        let env = stdlib::std_env(&mut symbol_table_builder);
+        let env = stdlib::native_std_env(&mut symbol_table_builder);
         let gc = gc::MarkSweep::new();
         let symbol_table = symbol_table_builder.build();
-        let interpreter = eval::Interpreter::new(heap, gc, env, None, symbol_table);
-        Self { interpreter }
+        let interpreter = eval::Interpreter::new(heap, gc, env, None, symbol_table, module);
+        let mut vm = Self { interpreter };
+        stdlib::load_non_native_std_env(&mut vm.interpreter);
+        vm
     }
 
     pub fn run_gc(&mut self) {

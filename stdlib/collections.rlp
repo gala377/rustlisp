@@ -1,0 +1,5 @@
+(def (map2 func list)
+    (+
+    	(list (func (head list)))
+	(map2 func (tail list)))
+)
