@@ -51,31 +51,16 @@ impl Vm {
             data::SymbolTableBuilder::with_symbols(&mut self.interpreter.symbols);
         let AST {
             program,
-            mut symbol_table_builder,
+            symbol_table_builder,
         } = reader::load(source, &mut self.interpreter.heap, symbol_table_builder).unwrap();
-        let env = stdlib::std_env(&mut symbol_table_builder);
+        // add newly read symbols to interpreter.symbols
         symbol_table_builder.update_table(&mut self.interpreter.symbols);
-        self.interpreter.push_context(vec![eval::FuncFrame {
-            globals: env,
-            locals: None,
-        }]);
         let nil = runtime::RootedVal::NumberVal(0.0);
         let last_rooted = program.iter().fold(nil, |last, expr| {
             last.heap_drop(&mut self.interpreter.heap);
             self.interpreter.eval(&expr)
         });
         runtime::drop_rooted_vec(&mut self.interpreter.heap, program);
-        let ctx = self.interpreter.pop_context();
-        self.interpreter.get_globals().update_with(
-            ctx.last()
-                .expect(
-                    "Globals empty after load. The call stack should never be empty. \
-                     There should always be at least one call frame on the stack",
-                )
-                .globals
-                .clone(),
-        );
-        self.interpreter.save_context(ctx);
         let result = func(&last_rooted, &self.interpreter.heap);
         last_rooted.heap_drop(&mut self.interpreter.heap);
         self.interpreter.run_gc();
