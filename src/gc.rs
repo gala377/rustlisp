@@ -255,7 +255,7 @@ impl HeapEntry {
         if let None = self.data {
             panic!("Free of an empty heap entry");
         }
-        assert!(self.header.strong_count == 0);
+        debug_assert!(self.header.strong_count == 0);
         unsafe {
             self.drop_data_unchecked();
         }
@@ -271,7 +271,7 @@ unsafe fn safe_drop_and_free<T>(ptr: *mut ()) {
 
 impl Drop for HeapEntry {
     fn drop(&mut self) {
-        assert!(self.header.strong_count == 0);
+        debug_assert!(self.header.strong_count == 0);
         unsafe { self.drop_data_unchecked() }
     }
 }
@@ -393,11 +393,25 @@ impl Heap {
         Func: FnOnce(&mut T) -> R,
         Ptr: ScopedRef<T> + HeapMarked,
     {
-        check_ptr!(self, ptr);
         let mut reference = self.deref_ptr_mut(ptr);
         func(&mut reference)
     }
 
+    #[cfg(debug)]
+    pub fn deref_ptr<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
+    where
+        Ptr: ScopedRef<T> + HeapMarked,
+    {
+        if cfg!(debug) {
+            check_ptr!(self, ptr);
+        }
+        ScopedPtr {
+            value: ptr.scoped_ref(self),
+            // guard: self,
+        }
+    }
+
+    #[cfg(not(debug))]
     pub fn deref_ptr<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         ScopedPtr {
             value: ptr.scoped_ref(self),
@@ -405,6 +419,21 @@ impl Heap {
         }
     }
 
+    #[cfg(debug)]
+    pub fn deref_ptr_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
+    where
+        Ptr: ScopedRef<T> + HeapMarked,
+    {
+        if cfg!(debug) {
+            check_ptr!(self, ptr);
+        }
+        ScopedMutPtr {
+            value: ptr.scoped_ref_mut(self),
+            // guard: self,
+        }
+    }
+
+    #[cfg(not(debug))]
     pub fn deref_ptr_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         ScopedMutPtr {
             value: ptr.scoped_ref_mut(self),
@@ -454,7 +483,9 @@ impl Heap {
     pub fn free_entry(&mut self, entry_index: usize) {
         // todo: test
         let entry = &mut self.entries[entry_index];
-        debug_assert!(entry.header.strong_count == 0);
+        debug_assert_eq!(entry.header.strong_count, 0, "freeing rooted value");
+        debug_assert!(!entry.header.dropped, "double free");
+
         entry.drop_data();
         entry.header.dropped = true;
 

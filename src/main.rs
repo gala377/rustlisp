@@ -1,6 +1,11 @@
 use std::env;
 
-use lispylib::{self, Interpreter, gc::{Heap, MarkSweep}, runtime::drop_rooted_vec};
+use lispylib::{
+    self,
+    gc::{Heap, MarkSweep},
+    runtime::drop_rooted_vec,
+    Interpreter,
+};
 
 fn get_file_name(args: Vec<String>) -> String {
     match args.len() {

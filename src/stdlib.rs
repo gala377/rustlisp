@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 
-use crate::{check_ptr, runtime};
 use crate::data::BuiltinSymbols;
 use crate::eval::FuncFrame;
+use crate::{check_ptr, runtime};
 use crate::{
     data::{Environment, SymbolId, SymbolTableBuilder},
     eval::Interpreter,
