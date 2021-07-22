@@ -174,8 +174,7 @@ impl Interpreter {
             _ => panic!("first symbol of a list should refer to a function"),
         };
         // println!("\n------------ Running gc --------------");
-        self.gc
-            .step(&mut self.heap, &self.call_stack, &self.saved_ctxs);
+        self.run_gc();
         // println!("-----------Gc step ended -------------\n");
         res
     }
@@ -418,6 +417,11 @@ impl Interpreter {
     pub fn pop_context(&mut self) -> SavedCtx {
         let ctx = self.saved_ctxs.pop().unwrap();
         std::mem::replace(&mut self.call_stack, ctx)
+    }
+
+    pub fn run_gc(&mut self) {
+        self.gc
+            .step(&mut self.heap, &self.call_stack, &self.saved_ctxs);
     }
 
     pub fn get_value(&mut self, name: &str) -> Option<RootedVal> {

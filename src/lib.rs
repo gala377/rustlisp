@@ -23,6 +23,22 @@ impl Vm {
         Self { interpreter }
     }
 
+    pub fn run_gc(&mut self) {
+        self.interpreter.run_gc();
+    }
+
+    pub fn get_value<Func, Res>(&mut self, name: &str, func: Func) -> Res
+    where
+        Func: FnOnce(Option<&runtime::RootedVal>, &gc::Heap) -> Res,
+    {
+        let val = self.interpreter.get_value(name);
+        let res = func(val.as_ref(), &self.interpreter.heap);
+        if let Some(inner) = val {
+            inner.heap_drop(&mut self.interpreter.heap);
+        }
+        res
+    }
+
     pub fn interpret(&mut self, source: &str) {
         self.interpret_map(source, |_, _| ())
     }
@@ -37,7 +53,7 @@ impl Vm {
             program,
             mut symbol_table_builder,
         } = reader::load(source, &mut self.interpreter.heap, symbol_table_builder).unwrap();
-        let env = stdlib::std_env(&mut &mut symbol_table_builder);
+        let env = stdlib::std_env(&mut symbol_table_builder);
         symbol_table_builder.update_table(&mut self.interpreter.symbols);
         self.interpreter.push_context(vec![eval::FuncFrame {
             globals: env,
@@ -62,6 +78,7 @@ impl Vm {
         self.interpreter.save_context(ctx);
         let result = func(&last_rooted, &self.interpreter.heap);
         last_rooted.heap_drop(&mut self.interpreter.heap);
+        self.interpreter.run_gc();
         result
     }
 }
