@@ -29,3 +29,12 @@
 (print "ending main module")
 
 (print-globals)
+
+(print "Stdlib test")
+(def to-ten (range 10))
+(print to-ten)
+(def (*2 x) (+ x x))
+(print "function defined")
+(def mapped (map2 *2 to-ten))
+(print "mapped defined")
+(print mapped)

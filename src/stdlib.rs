@@ -66,6 +66,7 @@ fn define_native_functions_functions(
             res
         },
         "+" => plus,
+        "-" => minus,
         "to-str" => |vm, args| {
             assert!(args.len() == 1, "function str accepts only one parameter");
             let res = RootedVal::string(args[0].str(&mut vm.heap, &mut vm.symbols), &mut vm.heap);
@@ -132,7 +133,7 @@ fn define_native_functions_functions(
                 assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take head from empty list");
                 let val = vm.heap.deref_ptr(&list)[0].clone();
                 let res = val.upgrade(&mut vm.heap);
-                drop_rooted_vec(&mut vm.heap, args);
+                vm.heap.drop_root(list);
                 res
             } else {
                 panic!("you can only use head on a lists");
@@ -145,7 +146,7 @@ fn define_native_functions_functions(
                 assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take tail from empty list");
                 let tail = vm.heap.deref_ptr(&list).iter().skip(1).cloned().collect();
                 let res = RootedVal::list(tail, &mut vm.heap);
-                drop_rooted_vec(&mut vm.heap, args);
+                vm.heap.drop_root(list);
                 res
             } else {
                 panic!("you can only use head on a lists");
@@ -220,6 +221,14 @@ fn plus(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
         RootedVal::StringVal(_) => concatenate_strings(vm, args),
         _ => panic!("You can only add lists, numbers or strings"),
     }
+}
+
+fn minus(_vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
+    assert!(args.len() > 1, "Cannot substract less than 2 values");
+    RootedVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {
+        RootedVal::NumberVal(inner) => acc - inner,
+        _ => panic!("Types mismatched"),
+    }))
 }
 
 fn add_numbers(_vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
