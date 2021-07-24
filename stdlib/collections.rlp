@@ -1,12 +1,12 @@
-(def (map2 func vals)
+(def (std/coll/map func vals)
     (if (null? vals)
         vals
         (+ (list (func (head vals)))
-           (map2 func (tail vals)))))
+           (std/coll/map func (tail vals)))))
 
-(def (range n) (__range 0 n))
+(def (std/coll/range n) (std/coll/__range 0 n))
 
-(def (__range curr n)
+(def (std/coll/__range curr n)
     (if (eq? curr n)
         '()
-        (+ (list curr) (__range (+ curr 1) n))))
+        (+ (list curr) (std/coll/__range (+ curr 1) n))))
