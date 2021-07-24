@@ -29,7 +29,6 @@ pub struct Interpreter {
     pub call_stack: Vec<FuncFrame>,
     pub symbols: SymbolTable,
     pub modules: HashMap<String, ModuleState>,
-    pub saved_ctxs: Vec<SavedCtx>,
 }
 
 impl Interpreter {
@@ -49,7 +48,6 @@ impl Interpreter {
             symbols,
             modules,
             call_stack: vec![FuncFrame { globals, locals }],
-            saved_ctxs: Vec::new(),
         }
     }
 
@@ -438,24 +436,9 @@ impl Interpreter {
         // unwrap generates a lot od stack unwinding code
         self.call_stack.last().unwrap().locals.clone()
     }
-
-    pub fn push_context(&mut self, call_stack: Vec<FuncFrame>) {
-        let old_ctx = std::mem::replace(&mut self.call_stack, call_stack);
-        self.saved_ctxs.push(old_ctx);
-    }
-
-    pub fn pop_context(&mut self) -> SavedCtx {
-        let ctx = self.saved_ctxs.pop().unwrap();
-        std::mem::replace(&mut self.call_stack, ctx)
-    }
-
     pub fn run_gc(&mut self) {
-        self.gc.step(
-            &mut self.heap,
-            &mut self.call_stack,
-            &mut self.saved_ctxs,
-            &mut self.modules,
-        );
+        self.gc
+            .step(&mut self.heap, &mut self.call_stack, &mut self.modules);
     }
 
     pub fn get_value(&mut self, name: &str) -> Option<RootedVal> {

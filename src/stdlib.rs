@@ -26,13 +26,13 @@ macro_rules! def_functions {
     };
 }
 
-pub fn native_std_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
+pub fn empty_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
     let mut env = Environment::new();
     define_native_functions_functions(&mut env.borrow_mut().values, symbol_table);
     env
 }
 
-pub fn load_non_native_std_env(vm: &mut Interpreter) {
+pub fn add_std_lib(vm: &mut Interpreter) {
     load::load_from_file(vm, "stdlib/lib.rlp".into(), false);
 }
 
@@ -166,8 +166,8 @@ fn define_native_functions_functions(
             std::io::stdin().read_line(&mut input).unwrap();
             RootedVal::string(input, &mut vm.heap)
         },
-        "load" => load::load_from_file_rt_wrapper,
-        "__load" => load::load_from_file_without_std_env_rt_wrapper,
+        "load" => load::load_from_file_runtime_wrapper,
+        "__load" => load::load_from_file_without_std_env_runtime_wrapper,
         "assert" => assert_impl,
         "print-globals" => print_globals,
     });

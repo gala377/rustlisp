@@ -17,9 +17,9 @@
     (print dont-rewrite)
     dont-rewrite)
 
+(print (if #t "this is true" (+ "this is" "false")))
+(print (if #f "this is true" (to-str (print (+ "this is" "false")))))
 
 (print "okay everything ended")
 (print (+ "does it crash?" this-crashes))
 (print-globals)
-(print (if #t "this is true" (+ "this is" "false")))
-(print (if #f "this is true" (to-str (print (+ "this is" "false")))))

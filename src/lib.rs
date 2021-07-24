@@ -15,13 +15,13 @@ pub struct Vm {
 impl Vm {
     pub fn new(module: &str) -> Self {
         let heap = gc::Heap::with_capacity(10000);
-        let mut symbol_table_builder = data::SymbolTableBuilder::builtin();
-        let env = stdlib::native_std_env(&mut symbol_table_builder);
         let gc = gc::MarkSweep::new();
-        let symbol_table = symbol_table_builder.build();
-        let interpreter = eval::Interpreter::new(heap, gc, env, None, symbol_table, module);
+        let mut symbol_table_builder = data::SymbolTableBuilder::builtin();
+        let globals = stdlib::empty_env(&mut symbol_table_builder);
+        let symbols = symbol_table_builder.build();
+        let interpreter = eval::Interpreter::new(heap, gc, globals, None, symbols, module);
         let mut vm = Self { interpreter };
-        stdlib::load_non_native_std_env(&mut vm.interpreter);
+        stdlib::add_std_lib(&mut vm.interpreter);
         vm
     }
 
@@ -29,16 +29,14 @@ impl Vm {
         self.interpreter.run_gc();
     }
 
-    pub fn get_value<Func, Res>(&mut self, name: &str, func: Func) -> Res
+    pub fn get_value<Func, Res>(&mut self, name: &str, func: Func) -> Option<Res>
     where
-        Func: FnOnce(Option<&runtime::RootedVal>, &gc::Heap) -> Res,
+        Func: FnOnce(&runtime::RootedVal, &gc::Heap) -> Res,
     {
-        let val = self.interpreter.get_value(name);
-        let res = func(val.as_ref(), &self.interpreter.heap);
-        if let Some(inner) = val {
-            inner.heap_drop(&mut self.interpreter.heap);
-        }
-        res
+        let val = self.interpreter.get_value(name)?;
+        let res = func(&val, &self.interpreter.heap);
+        val.heap_drop(&mut self.interpreter.heap);
+        Some(res)
     }
 
     pub fn interpret(&mut self, source: &str) {

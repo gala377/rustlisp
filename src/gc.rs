@@ -542,10 +542,9 @@ impl MarkSweep {
         &mut self,
         heap: &mut Heap,
         call_stack: &Vec<FuncFrame>,
-        saved_envs: &Vec<SavedCtx>,
         modules: &HashMap<String, ModuleState>,
     ) {
-        self.mark(heap, call_stack, saved_envs, modules);
+        self.mark(heap, call_stack, modules);
         self.sweep(heap);
         let mut curr = heap.first_taken;
         while let Some(entry_index) = curr {
@@ -558,7 +557,6 @@ impl MarkSweep {
         &mut self,
         heap: &mut Heap,
         call_stack: &Vec<FuncFrame>,
-        saved_envs: &Vec<SavedCtx>,
         modules: &HashMap<String, ModuleState>,
     ) {
         if heap.taken_entries == 0 {
@@ -568,10 +566,6 @@ impl MarkSweep {
         let mut marked = self.traverse_and_mark(heap);
         // call stack
         self.visit_call_stack(&mut marked, heap, call_stack);
-        // saved call stacks
-        for stack in saved_envs {
-            self.visit_call_stack(&mut marked, heap, stack);
-        }
         // modules
         for (_, module_state) in modules.iter() {
             if let ModuleState::Evaluated(module_env) = module_state {
