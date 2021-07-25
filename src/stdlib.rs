@@ -145,26 +145,7 @@ fn define_native_functions(
         "list?" => list::is_list,
         "nth" => list::get_nth_elem,
         "length" => list::get_len,
-        "map" => |vm, mut args| {
-            assert_eq!(args.len(), 2, "you have to map function onto a list");
-            let (list, func) = (args.pop().unwrap(), args.pop().unwrap());
-            let res = if let List(list) = list {
-                check_ptr!(vm.heap, list);
-                let len = (vm.heap.deref_ptr(&list)).len();
-                let mut res = Vec::with_capacity(len);
-                for i in 0..len {
-                    let item = vm.heap.deref_ptr(&list)[i].clone();
-                    let item = item.upgrade(&mut vm.heap);
-                    res.push(vm.call(&func, vec![item]));
-                }
-                vm.heap.drop_root(list);
-                RootedVal::list_from_rooted(res, &mut vm.heap)
-            } else {
-                panic!("you have to map a function onto a list");
-            };
-            func.heap_drop(&mut vm.heap);
-            res
-        },
+        "map" => list::map,
         "head" => |vm, mut args| {
             assert_eq!(args.len(), 1, "head takes one argument");
             let list = args.pop().unwrap();

@@ -31,7 +31,17 @@ native_module!{
     typed get_len(vm, List(val)) =>
         RootedVal::NumberVal(vm.heap.deref_ptr(val).len() as f64);
 
-    // typed map_list(vm, callable, List(val)) {
-    //     RootedVal::nil(&mut vm.heap)
-    // };
+    typed map(vm, func, List(val)) {
+        if !func.is_callable() {
+            panic!("First argument of map needs to be a callable");
+        }
+        let len = vm.heap.deref_ptr(val).len();
+        let mut res = Vec::with_capacity(len);
+        for i in 0..len {
+            let item = vm.heap.deref_ptr(val)[i].clone();
+            let item = item.upgrade(&mut vm.heap);
+            res.push(vm.call(func, vec![item]));
+        }
+        RootedVal::list_from_rooted(res, &mut vm.heap)
+    };
 }
