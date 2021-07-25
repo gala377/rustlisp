@@ -10,8 +10,9 @@
    3. condition
 4. Rest arguments in functions
 5. Key-word args?
-6. Gen-sym std-lib
-7.
-8. Namespacing
-9. Objects?
-10. Iterators and coroutines would be so coool
+6. Errors
+7. Gen-sym std-lib
+8.
+9. Namespacing
+10. Objects?
+11. Iterators and coroutines would be so coool
