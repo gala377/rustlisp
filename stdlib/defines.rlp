@@ -2,3 +2,4 @@
 (def #t '#t)
 (def #f '#f)
 (def nil '())
+(def none 'none)

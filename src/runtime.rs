@@ -141,6 +141,10 @@ impl RootedVal {
         RootedVal::List(inner)
     }
 
+    pub fn none() -> RootedVal {
+        RootedVal::Symbol(BuiltinSymbols::None as SymbolId)
+    }
+
     pub fn sym_true() -> RootedVal {
         RootedVal::Symbol(BuiltinSymbols::True as SymbolId)
     }

@@ -39,7 +39,7 @@ fn _load_from_file_runtime_wrapper(
         _ => panic!("illegal form of load"),
     }
     arg.heap_drop(&mut vm.heap);
-    RootedVal::nil(&mut vm.heap)
+    RootedVal::none()
 }
 
 pub fn load_from_file(vm: &mut Interpreter, file_path: String, load_std_env: bool) {

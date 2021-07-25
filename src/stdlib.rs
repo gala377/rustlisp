@@ -178,7 +178,7 @@ fn define_native_functions(
                 println!("{}", x.str(&mut vm.heap, &mut vm.symbols));
                 x.heap_drop(&mut vm.heap);
             });
-            RootedVal::nil(&mut vm.heap)
+            RootedVal::none()
         },
         "read-line" => |vm, args| {
             assert!(args.is_empty(), "read-line takes 0 arguments");
@@ -205,7 +205,7 @@ native_module!{
             println!("\t{:20}|{}", symbol, printable);
         }
         drop_rooted_vec(&mut vm.heap, args);
-        RootedVal::nil(&mut vm.heap)
+        RootedVal::none()
     };
 
     assert_impl(vm, args) {

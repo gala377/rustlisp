@@ -211,6 +211,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::Unquote) => panic!("Unquote in not quasiquoted context"),
             Ok(BuiltinSymbols::Lambda) => Ok(self.eval_lambda(vals)),
             Ok(BuiltinSymbols::If) => Ok(self.eval_if(vals)),
+            Ok(BuiltinSymbols::While) => Ok(self.eval_while(vals)),
             _ => Err(NotSpecialForm),
         }
     }
@@ -282,7 +283,7 @@ impl Interpreter {
                     .insert(name.clone(), function.downgrade(&mut self.heap));
             }
         }
-        RootedVal::nil(&mut self.heap)
+        RootedVal::none()
     }
 
     fn eval_lambda<Ptr>(&mut self, vals: &Ptr) -> RootedVal
@@ -423,6 +424,28 @@ impl Interpreter {
         };
         res.heap_drop(&mut self.heap);
         self.eval_weak(&eval_next)
+    }
+
+    fn eval_while<Ptr>(&mut self, expr: &Ptr) -> RootedVal
+    where
+        Ptr: ScopedRef<Vec<WeakVal>>,
+    {
+        assert!(self.heap.deref_ptr(expr).len() > 2, "while expr needs at least 2 clauses");
+        let cond = self.heap.deref_ptr(expr)[1].clone();
+        let size = self.heap.deref_ptr(expr).len();
+        while {
+            let cond_value = self.eval_weak(&cond);
+            let next_it = cond_value.is_symbol(BuiltinSymbols::True as usize);
+            cond_value.heap_drop(&mut self.heap);
+            next_it
+        } {
+            for i in 2..size {
+                let code = self.heap.deref_ptr(expr)[i].clone();
+                let res = self.eval_weak(&code);
+                res.heap_drop(&mut self.heap);
+            }
+        }
+        RootedVal::none()
     }
 
     pub fn get_globals(&self) -> Env {
