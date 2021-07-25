@@ -212,6 +212,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::Lambda) => Ok(self.eval_lambda(vals)),
             Ok(BuiltinSymbols::If) => Ok(self.eval_if(vals)),
             Ok(BuiltinSymbols::While) => Ok(self.eval_while(vals)),
+            Ok(BuiltinSymbols::Set) => Ok(self.eval_set(vals)),
             _ => Err(NotSpecialForm),
         }
     }
@@ -445,6 +446,72 @@ impl Interpreter {
                 res.heap_drop(&mut self.heap);
             }
         }
+        RootedVal::none()
+    }
+
+    fn eval_set<Ptr>(&mut self, expr: &Ptr) -> RootedVal
+    where
+        Ptr: ScopedRef<Vec<WeakVal>>
+    {
+        assert_eq!(self.heap.deref_ptr(expr).len(), 3, "set form takes 2 arguments");
+        let location = self.heap.deref_ptr(expr)[1].clone();
+        let val = self.heap.deref_ptr(expr)[2].clone();
+        let val = self.eval_weak(&val);
+        match &location {
+            WeakVal::Symbol(inner) => {
+                let mut found = false;
+                if let Some(env) = self.get_locals() {
+                    let mut env = env.clone();
+                    found = loop {
+                        if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
+                            let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
+                            *env_entry = val;
+                            break true;
+                        };
+                        if let Some(val) = env.into_parent() {
+                            env = val;
+                        } else {
+                            break false;
+                        }
+                    };
+                }
+                if !found {
+                    match self.get_globals().borrow_mut().values.get_mut(inner) {
+                        Some(env_entry) => {
+                            let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
+                            *env_entry = val;
+                        }
+                        None => panic!("Trying to set! not defined location"),
+                    }
+                }
+            },
+            WeakVal::List(inner) => {
+                let (list_expr, index_expr) = match &self.heap.deref_ptr(inner)[..] {
+                    [list_expr, index_expr] => {
+                        (list_expr.clone(), index_expr.clone())
+                    }
+                    _ => panic!("Invalid list set!")
+                };
+                let (mut list, index) =  {
+                    let list = self.eval_weak(&list_expr);
+                    let index = self.eval_weak(&index_expr);
+                    match (list, index) {
+                        (RootedVal::List(ptr), RootedVal::NumberVal(index)) => (ptr, index),
+                        _ => panic!("List set! target types mismatched")
+                    }
+                };
+                let index = index as usize;
+                let len = self.heap.deref_ptr(&list).len();
+                if index >= len {
+                    panic!("Trying to set list location past its size")
+                }
+                let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
+                self.heap.deref_ptr_mut(&mut list)[index] = val;
+                self.heap.drop_root(list);
+            },
+            _ => panic!("Invalid set!")
+        }
+        val.heap_drop(&mut self.heap);
         RootedVal::none()
     }
 

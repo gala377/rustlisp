@@ -199,7 +199,8 @@ generate_builtin_symbols! {
         ("lambda": 8) => Lambda,
         ("while": 9) => While,
         ("if": 10) => If,
-        ("None": 11) => None,
+        ("none": 11) => None,
+        ("set!": 12) => Set,
     }
 }
 
