@@ -12,7 +12,12 @@
 
 (print "after load")
 (print "i am here")
+
+
+
 (my-func "hello???")
+
+
 
 (print "BEFORE FIRST ASSERT")
 (assert 1 1 "Should pass")
@@ -42,3 +47,30 @@
 (def mapped (std/coll/map *2 to-ten))
 (print "mapped defined")
 (print mapped)
+
+(print "SET TEST")
+
+(def set_test "hello")
+(print set_test)
+(set! set_test "not hello anymore")
+(print set_test)
+
+(def list_set '(1 2 3 4 5 6))
+(print list_set)
+(set! (list_set 3) "Hello?")
+(print list_set)
+(def (set-in-func)
+    (print "this one is global")
+    (print list_set)
+    (print "now we define local")
+    (def list_set '(11 12 13 14 15))
+    (print list_set)
+    (print "now we set local")
+    (set! (list_set 2) "works?")
+    (print list_set)
+    (set! list_set "completly overriten")
+    (print list_set)
+    (print "And now we return")
+)
+(set-in-func)
+(print list_set)

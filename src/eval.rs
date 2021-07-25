@@ -123,7 +123,6 @@ impl Interpreter {
     }
 
     pub fn call(&mut self, func: &RootedVal, args: Vec<RootedVal>) -> RootedVal {
-        // println!("Calling func...");
         let res = match func {
             RootedVal::Func(func) => {
                 check_ptr!(self.heap, func);
@@ -131,15 +130,11 @@ impl Interpreter {
                     let func = self.heap.deref_ptr(func);
                     (func.body.clone(), func.args.clone(), func.globals.clone())
                 };
-                let func_env = if func_args.is_empty() {
-                    None
-                } else {
-                    Some(func_call_env(&mut self.heap, &func_args, args))
-                };
+                let func_env = func_call_env(&mut self.heap, &func_args, args);
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
-                        locals: func_env,
+                        locals: Some(func_env),
                     },
                     |vm| vm.eval_weak(&func_body),
                 )
@@ -157,8 +152,6 @@ impl Interpreter {
                 };
                 let func_env =
                     func_call_env_with_parent(&mut self.heap, &func_args, args, func_env);
-                // TODO: DIFF WITH PREVIOUS VERSION TO SEE IF LOCALS WHERE CHANGED CORRECTLY
-                // TODO: PUSH NEW GLOBALS CONTEXT
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
@@ -168,7 +161,6 @@ impl Interpreter {
                 )
             }
             RootedVal::NativeFunc(func) => {
-                // println!("Native func...");
                 let res = self.with_frame(
                     FuncFrame {
                         globals: self.get_globals(),
@@ -176,14 +168,11 @@ impl Interpreter {
                     },
                     |vm| func(vm, args),
                 );
-                // println!("Returning from native");
                 res
             }
             _ => panic!("first symbol of a list should refer to a function"),
         };
-        // println!("\n------------ Running gc --------------");
         self.run_gc();
-        // println!("-----------Gc step ended -------------\n");
         res
     }
 
@@ -460,10 +449,13 @@ impl Interpreter {
         match &location {
             WeakVal::Symbol(inner) => {
                 let mut found = false;
+                println!("In set");
                 if let Some(env) = self.get_locals() {
+                    println!("Looking in locals");
                     let mut env = env.clone();
                     found = loop {
                         if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
+                            println!("Found in locals");
                             let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
                             *env_entry = val;
                             break true;
@@ -471,11 +463,13 @@ impl Interpreter {
                         if let Some(val) = env.into_parent() {
                             env = val;
                         } else {
+                            println!("Not found in locals");
                             break false;
                         }
                     };
                 }
                 if !found {
+                    println!("Looking in globals");
                     match self.get_globals().borrow_mut().values.get_mut(inner) {
                         Some(env_entry) => {
                             let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
