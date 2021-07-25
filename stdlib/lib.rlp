@@ -1,2 +1,3 @@
-(__load "stdlib/collections.rlp")
 (__load "stdlib/defines.rlp")
+(__load "stdlib/collections.rlp")
+(__load "stdlib/numeric.rlp")

@@ -146,19 +146,9 @@ fn define_native_functions(
         "nth" => list::get_nth_elem,
         "length" => list::get_len,
         "map" => list::map,
-        "head" => |vm, mut args| {
-            assert_eq!(args.len(), 1, "head takes one argument");
-            let list = args.pop().unwrap();
-            if let List(list) = list {
-                assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take head from empty list");
-                let val = vm.heap.deref_ptr(&list)[0].clone();
-                let res = val.upgrade(&mut vm.heap);
-                vm.heap.drop_root(list);
-                res
-            } else {
-                panic!("you can only use head on a lists");
-            }
-        },
+        "push!" => list::push,
+        "size" => list::size,
+        "head" => list::head,
         "tail" => |vm, mut args| {
             assert_eq!(args.len(), 1, "tail takes one argument");
             let list = args.pop().unwrap();
@@ -172,6 +162,9 @@ fn define_native_functions(
                 panic!("you can only use head on a lists");
             }
         },
+        // numbers
+        "less-than" => less_than,
+
         // io
         "print" => |vm, args| {
             args.into_iter().for_each(|x| {
@@ -196,6 +189,9 @@ fn define_native_functions(
 use RootedVal::*;
 
 native_module!{
+    typed less_than(vm, NumberVal(a), NumberVal(b)) => 
+        RootedVal::predicate(*a < *b);
+
     print_globals(vm, args) {
         let globals = vm.get_globals();
         println!("Printing globals:");

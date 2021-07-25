@@ -44,4 +44,19 @@ native_module!{
         }
         RootedVal::list_from_rooted(res, &mut vm.heap)
     };
+
+    typed push(vm, List(list), val) {
+        let val = val.clone(&mut vm.heap).downgrade(&mut vm.heap);
+        vm.heap.deref_ptr_mut(list).push(val);
+        RootedVal::none()
+    };
+
+    typed head(vm, List(val)) {
+        assert!(!vm.heap.deref_ptr(val).is_empty(), "Cannot head on empty list");
+        let val = vm.heap.deref_ptr(val)[0].clone();
+        val.upgrade(&mut vm.heap)
+    };
+
+    typed size(vm, List(val)) =>
+        RootedVal::NumberVal(vm.heap.deref_ptr(val).len() as f64);
 }

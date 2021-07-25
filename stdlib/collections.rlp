@@ -1,12 +1,21 @@
-(def (std/coll/map func vals)
-    (if (null? vals)
-        vals
-        (+ (list (func (head vals)))
-           (std/coll/map func (tail vals)))))
+(__load "stdlib/numeric.rlp")
+(__load "stdlib/defines.rlp")
 
-(def (std/coll/range n) (std/coll/__range 0 n))
+(def (std/coll/map func values)
+    (def length (size values))
+    (def result '())
+    (def i 0)
+    (while (less-than i length)
+        (push! result
+            (func (nth values i)))
+        (set! i (inc i)))
+    result)
 
-(def (std/coll/__range curr n)
-    (if (eq? curr n)
-        '()
-        (+ (list curr) (std/coll/__range (+ curr 1) n))))
+(def (std/coll/range n)
+    (def i 0)
+    (def res '())
+    (while (less-than i n)
+        (push! res i)
+        (set! i (inc i)))
+    res)
+

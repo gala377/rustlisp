@@ -449,13 +449,10 @@ impl Interpreter {
         match &location {
             WeakVal::Symbol(inner) => {
                 let mut found = false;
-                println!("In set");
                 if let Some(env) = self.get_locals() {
-                    println!("Looking in locals");
                     let mut env = env.clone();
                     found = loop {
                         if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
-                            println!("Found in locals");
                             let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
                             *env_entry = val;
                             break true;
@@ -463,13 +460,11 @@ impl Interpreter {
                         if let Some(val) = env.into_parent() {
                             env = val;
                         } else {
-                            println!("Not found in locals");
                             break false;
                         }
                     };
                 }
                 if !found {
-                    println!("Looking in globals");
                     match self.get_globals().borrow_mut().values.get_mut(inner) {
                         Some(env_entry) => {
                             let val = val.clone(&mut self.heap).downgrade(&mut self.heap);

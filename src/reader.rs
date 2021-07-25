@@ -1,8 +1,4 @@
-use crate::{
-    data::{BuiltinSymbols, SymbolId, SymbolTableBuilder},
-    gc::Heap,
-    runtime::RootedVal,
-};
+use crate::{data::{BuiltinSymbols, SymbolId, SymbolTableBuilder}, gc::Heap, runtime::{RootedVal, drop_rooted_vec}};
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -97,9 +93,19 @@ where
     while let Some(atom) = curr_atom.next() {
         match atom {
             Token::LeftBracket => {
-                prog.push(parse_list(&mut curr_atom, heap, symbol_table_builder)?)
+                let list_res = parse_list(&mut curr_atom, heap, symbol_table_builder);
+                match list_res {
+                    Ok(val) => prog.push(val),
+                    Err(err) => {
+                        drop_rooted_vec(heap, prog);
+                        return Err(err);
+                    }
+                }
             }
-            _ => return Err(ParseError::UnexpectedAtom),
+            _ => {
+                drop_rooted_vec(heap, prog);
+                return Err(ParseError::UnexpectedAtom);
+            }
         }
     }
     Ok(prog)
@@ -148,6 +154,7 @@ where
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table_builder)?,
         });
     }
+    drop_rooted_vec(heap, list);
     Err(ParseError::UnclosedList)
 }
 

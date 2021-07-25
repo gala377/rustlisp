@@ -68,7 +68,7 @@
     (print "now we set local")
     (set! (list_set 2) "works?")
     (print list_set)
-    (set! list_set "completly overriten")
+    (set! list_set "completly overiten")
     (print list_set)
     (print "And now we return")
 )
