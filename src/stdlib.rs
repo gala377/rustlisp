@@ -1,15 +1,70 @@
 use std::collections::HashMap;
 
-use crate::check_ptr;
-use crate::data::BuiltinSymbols;
 use crate::{
-    data::{Environment, SymbolId, SymbolTableBuilder},
+    check_ptr,
+    data::{BuiltinSymbols, Environment, SymbolId, SymbolTableBuilder},
     eval::Interpreter,
     gc::HeapMarked,
     runtime::{drop_rooted_vec, RootedVal, WeakVal},
 };
 
+mod list;
 mod load;
+
+#[macro_export]
+macro_rules! native_untyped_fn {
+    ($name:ident ( $vm:ident, $args:ident ) $body:expr) => {
+        pub fn $name(
+            #[allow(unused_variables)] $vm: &mut crate::eval::Interpreter,
+            #[allow(unused_mut)] mut $args: Vec<crate::runtime::RootedVal>,
+        ) -> crate::runtime::RootedVal {
+            $body
+        }
+    };
+}
+
+
+#[macro_export]
+macro_rules! native_typed_fn {
+    ($name:ident ( $vm:ident, $( $args:pat ),* ) $body:expr) => {
+        pub fn $name(
+            #[allow(unused_variable)] $vm: &mut crate::eval::Interpreter,
+            #[allow(unused_mut)] mut args: Vec<crate::runtime::RootedVal>,
+        ) -> crate::runtime::RootedVal {
+            let res = match &mut args[..] {
+                [$( $args),*] => {
+                    $body
+                }
+                _ => panic!("{} wrong arguments in call", stringify!($name))
+            };
+            drop_rooted_vec(&mut $vm.heap, args);
+            res
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! native_fn {
+    (typed $name:ident ( $vm:ident, $( $args:pat ),* ) $body:expr) => {
+        crate::native_typed_fn!{ $name ( $vm, $( $args ),* ) $body }
+    };
+    ($name:ident ( $vm:ident, $args:ident ) $body:expr) => {
+        crate::native_untyped_fn!{ $name ( $vm, $args ) $body }
+    };
+}
+
+#[macro_export]
+macro_rules! native_module {
+    () => {};
+    (typed $name:ident ($vm:ident, $( $args:pat ),* ) $(=>)? $body:expr ; $($rest:tt)* ) => {
+        crate::native_typed_fn!{ $name ( $vm, $( $args ),* ) $body }
+        crate::native_module!{ $($rest)* }
+    };
+    ($name:ident ($vm:ident, $args:ident ) $(=>)? $body:expr ; $($rest:tt)*) => {
+        crate::native_untyped_fn!{ $name ( $vm, $args ) $body }
+        crate::native_module!{ $($rest)* }
+    };
+}
 
 macro_rules! def_func {
     ($map:ident, $symbols:ident, $name:literal, $lambda:expr) => {
@@ -28,7 +83,7 @@ macro_rules! def_functions {
 
 pub fn empty_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
     let mut env = Environment::new();
-    define_native_functions_functions(&mut env.borrow_mut().values, symbol_table);
+    define_native_functions(&mut env.borrow_mut().values, symbol_table);
     env
 }
 
@@ -36,7 +91,7 @@ pub fn add_std_lib(vm: &mut Interpreter) {
     load::load_from_file(vm, "stdlib/lib.rlp".into(), false);
 }
 
-fn define_native_functions_functions(
+fn define_native_functions(
     map: &mut HashMap<SymbolId, WeakVal>,
     symbol_table: &mut SymbolTableBuilder,
 ) {
@@ -84,28 +139,12 @@ fn define_native_functions_functions(
         },
 
         // lists
-        "list" => |vm, args| RootedVal::list_from_rooted(args, &mut vm.heap),
-        "null?" => |vm, args| {
-            assert_eq!(args.len(), 1, "null takes one argument");
-            let res = if let List(inner) = &args[0] {
-                check_ptr!(vm.heap, inner);
-                RootedVal::predicate(vm.heap.deref_ptr(inner).is_empty())
-            } else {
-                panic!("null can only be called on lists");
-            };
-            drop_rooted_vec(&mut vm.heap, args);
-            res
-        },
-        "list?" => |vm, args| {
-            assert_eq!(args.len(), 1, "list? takes one argument");
-            let res = if let List(_) = &args[0] {
-                RootedVal::sym_true()
-            } else {
-                RootedVal::sym_false()
-            };
-            drop_rooted_vec(&mut vm.heap, args);
-            res
-        },
+        "list" => list::make_list,
+        "null?" => list::is_empty,
+        "empty?" => list::is_empty,
+        "list?" => list::is_list,
+        "nth" => list::get_nth_elem,
+        "length" => list::get_len,
         "map" => |vm, mut args| {
             assert_eq!(args.len(), 2, "you have to map function onto a list");
             let (list, func) = (args.pop().unwrap(), args.pop().unwrap());
@@ -173,107 +212,103 @@ fn define_native_functions_functions(
     });
 }
 
-fn print_globals(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
-    let globals = vm.get_globals();
-    println!("Printing globals:");
-    for (k, v) in &globals.borrow().values {
-        let printable = v.repr(&vm.heap, &vm.symbols);
-        let symbol = vm.symbols[*k].clone();
-        println!("\t{:20}|{}", symbol, printable);
-    }
-    drop_rooted_vec(&mut vm.heap, args);
-    RootedVal::nil(&mut vm.heap)
-}
+use RootedVal::*;
 
-fn assert_impl(vm: &mut Interpreter, mut args: Vec<RootedVal>) -> RootedVal {
-    // println!("Asserting");
-    let message = args.pop().unwrap();
-    let func = vm.get_value("eq?").unwrap();
-    // println!("Got value for eq? Calling...");
-    let res = vm.call(&func, args);
-    // println!("After call");
-    match res {
-        RootedVal::Symbol(x) => {
-            if x == BuiltinSymbols::True as usize {
-                message.heap_drop(&mut vm.heap);
-                func.heap_drop(&mut vm.heap);
-                return RootedVal::sym_true();
-            }
+native_module!{
+    print_globals(vm, args) {
+        let globals = vm.get_globals();
+        println!("Printing globals:");
+        for (k, v) in &globals.borrow().values {
+            let printable = v.repr(&vm.heap, &vm.symbols);
+            let symbol = vm.symbols[*k].clone();
+            println!("\t{:20}|{}", symbol, printable);
         }
-        _ => (),
+        drop_rooted_vec(&mut vm.heap, args);
+        RootedVal::nil(&mut vm.heap)
     };
-    match message {
-        RootedVal::StringVal(ptr) => {
-            check_ptr!(vm.heap, ptr);
-            let msg = vm.heap.deref_ptr(&ptr).clone();
-            vm.heap.drop_root(ptr);
-            panic!("{}", msg);
-        }
-        _ => panic!("Assertion failed with unknown message"),
-    }
-}
 
-fn plus(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
-    assert!(args.len() > 1, "Cannot add less than 2 values");
-    match &args[0] {
-        RootedVal::List(_) => concatenate_lists(vm, args),
-        RootedVal::NumberVal(_) => add_numbers(vm, args),
-        RootedVal::StringVal(_) => concatenate_strings(vm, args),
-        _ => panic!("You can only add lists, numbers or strings"),
-    }
-}
-
-fn minus(_vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
-    assert!(args.len() > 1, "Cannot substract less than 2 values");
-    RootedVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {
-        RootedVal::NumberVal(inner) => acc - inner,
-        _ => panic!("Types mismatched"),
-    }))
-}
-
-fn add_numbers(_vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
-    RootedVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {
-        RootedVal::NumberVal(inner) => acc + inner,
-        _ => panic!("Types mismatched"),
-    }))
-}
-
-fn concatenate_strings(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
-    RootedVal::string(
-        args.into_iter().fold(String::new(), |acc, x| match x {
-            RootedVal::StringVal(inner) => {
-                check_ptr!(vm.heap, inner);
-                let res = acc + &vm.heap.deref_ptr(&inner);
-                vm.heap.drop_root(inner);
-                res
+    assert_impl(vm, args) {
+        let message = args.pop().unwrap();
+        let func = vm.get_value("eq?").unwrap();
+        let res = vm.call(&func, args);
+        match res {
+            RootedVal::Symbol(x) => {
+                if x == BuiltinSymbols::True as usize {
+                    message.heap_drop(&mut vm.heap);
+                    func.heap_drop(&mut vm.heap);
+                    return RootedVal::sym_true();
+                }
             }
-            _ => panic!("Types mismatched"),
-        }),
-        &mut vm.heap,
-    )
-}
-
-fn concatenate_lists(vm: &mut Interpreter, args: Vec<RootedVal>) -> RootedVal {
-    let size = args.iter().fold(0, |init, x| {
-        init + match x {
-            RootedVal::List(ptr) => vm.heap.deref_ptr(ptr).len(),
-            _ => panic!("Types mismatched in list concatenation"),
-        }
-    });
-    let mut init: Vec<WeakVal> = Vec::with_capacity(size);
-    for list in args.iter() {
-        match list {
-            RootedVal::List(ptr) => {
+            _ => (),
+        };
+        match message {
+            RootedVal::StringVal(ptr) => {
                 check_ptr!(vm.heap, ptr);
-                let list_ref = vm.heap.deref_ptr(ptr);
-                init.extend(list_ref.iter().cloned());
+                let msg = vm.heap.deref_ptr(&ptr).clone();
+                vm.heap.drop_root(ptr);
+                panic!("{}", msg);
             }
-            _ => panic!("Types mismatched"),
+            _ => panic!("Assertion failed with unknown message"),
         }
-    }
-    let result = vm.heap.allocate(init);
-    // Copied values are now rooted after we put result into heap
-    // so we can safely drop them.
-    drop_rooted_vec(&mut vm.heap, args);
-    RootedVal::List(result)
+    };
+
+    plus(vm, args) {
+        assert!(args.len() > 1, "Cannot add less than 2 values");
+        match &args[0] {
+            RootedVal::List(_) => concatenate_lists(vm, args),
+            RootedVal::NumberVal(_) => add_numbers(vm, args),
+            RootedVal::StringVal(_) => concatenate_strings(vm, args),
+            _ => panic!("You can only add lists, numbers or strings"),
+        }
+    };
+
+    typed minus(vm, NumberVal(a), NumberVal(b)) =>
+        RootedVal::NumberVal(*a - *b);
+
+    add_numbers(vm, args) {
+        RootedVal::NumberVal(args.into_iter().fold(0.0, |acc, x| match x {
+            RootedVal::NumberVal(inner) => acc + inner,
+            _ => panic!("Types mismatched"),
+        }))
+    };
+
+    concatenate_strings(vm, args) {
+        RootedVal::string(
+            args.into_iter().fold(String::new(), |acc, x| match x {
+                RootedVal::StringVal(inner) => {
+                    check_ptr!(vm.heap, inner);
+                    let res = acc + &vm.heap.deref_ptr(&inner);
+                    vm.heap.drop_root(inner);
+                    res
+                }
+                _ => panic!("Types mismatched"),
+            }),
+            &mut vm.heap,
+        )
+    };
+
+    concatenate_lists(vm, args) {
+        let size = args.iter().fold(0, |init, x| {
+            init + match x {
+                RootedVal::List(ptr) => vm.heap.deref_ptr(ptr).len(),
+                _ => panic!("Types mismatched in list concatenation"),
+            }
+        });
+        let mut init: Vec<WeakVal> = Vec::with_capacity(size);
+        for list in args.iter() {
+            match list {
+                RootedVal::List(ptr) => {
+                    check_ptr!(vm.heap, ptr);
+                    let list_ref = vm.heap.deref_ptr(ptr);
+                    init.extend(list_ref.iter().cloned());
+                }
+                _ => panic!("Types mismatched"),
+            }
+        }
+        let result = vm.heap.allocate(init);
+        // Copied values are now rooted after we put result into heap
+        // so we can safely drop them.
+        drop_rooted_vec(&mut vm.heap, args);
+        RootedVal::List(result)
+    };
 }

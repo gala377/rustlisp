@@ -6,7 +6,7 @@ use std::{
 
 use crate::{
     data::Environment,
-    eval::{FuncFrame, Interpreter, ModuleState, SavedCtx},
+    eval::{FuncFrame, ModuleState},
     runtime::{self, Lambda, RuntimeFunc, WeakVal},
 };
 

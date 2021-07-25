@@ -1,11 +1,11 @@
-use crate::eval::{FuncFrame, ModuleState};
-use crate::{check_ptr, runtime, stdlib};
 use crate::{
+    check_ptr,
     data::{Environment, SymbolTableBuilder},
-    eval::Interpreter,
+    eval::{FuncFrame, Interpreter, ModuleState},
     gc::HeapMarked,
     reader::{self, AST},
-    runtime::{drop_rooted_vec, RootedVal},
+    runtime::{self, RootedVal},
+    stdlib,
 };
 
 pub fn load_from_file_without_std_env_runtime_wrapper(
@@ -49,8 +49,8 @@ pub fn load_from_file(vm: &mut Interpreter, file_path: String, load_std_env: boo
         None => {
             vm.modules
                 .insert(file_path.clone(), ModuleState::Evaluating);
-            let source = std::fs::read_to_string(&file_path)
-                .expect(&format!("No such path {}", file_path));
+            let source =
+                std::fs::read_to_string(&file_path).expect(&format!("No such path {}", file_path));
             let module = load_module(vm, &source, load_std_env);
             let module_entry = vm.modules.get_mut(&file_path).unwrap();
             *module_entry = ModuleState::Evaluated(module.clone());
@@ -68,7 +68,10 @@ fn load_module(vm: &mut Interpreter, source: &str, load_std_env: bool) -> Enviro
     } = reader::load(&source, &mut vm.heap, symbol_table_builder).unwrap();
     let file_env = stdlib::empty_env(&mut symbol_table_builder);
     symbol_table_builder.update_table(&mut vm.symbols);
-    vm.call_stack.push(FuncFrame {globals: file_env, locals: None} );
+    vm.call_stack.push(FuncFrame {
+        globals: file_env,
+        locals: None,
+    });
     if load_std_env {
         stdlib::add_std_lib(vm);
     }
