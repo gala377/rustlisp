@@ -1,12 +1,13 @@
-use std::collections::HashMap;
-use std::convert::TryInto;
+use std::{collections::HashMap, convert::TryInto};
 
-use crate::check_ptr;
-use crate::data::{BuiltinSymbols, Environment, SymbolId, SymbolTable};
-use crate::gc::{Heap, HeapMarked, MarkSweep, ScopedRef};
-use crate::gc::{ScopedMutPtr, ScopedPtr};
-use crate::runtime::{drop_rooted_vec, RootedVal, WeakVal};
-use crate::utils::JoinedIterator;
+#[cfg(debug)]
+use crate::gc::HeapMarked;
+use crate::{
+    data::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
+    gc::{Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
+    runtime::{drop_rooted_vec, RootedVal, WeakVal},
+    utils::JoinedIterator,
+};
 
 type Env = Environment;
 
@@ -107,16 +108,7 @@ impl Interpreter {
         if let Ok(val) = self.try_eval_special_form(vals) {
             return val;
         }
-        let size = self.get_ref(vals).len();
-        let mut evaled = Vec::new();
-        for i in 0..size {
-            let raw_value = {
-                let ptr_ref = &self.get_ref(vals)[i];
-                ptr_ref.clone()
-            };
-            let evaled_value = self.eval_weak(&raw_value);
-            evaled.push(evaled_value);
-        }
+        let mut evaled = map_scoped_vec(self, vals, |vm, val| vm.eval_weak(val));
         let func = evaled.remove(0);
         let res = self.call(&func, evaled);
         func.heap_drop(&mut self.heap);
@@ -126,7 +118,6 @@ impl Interpreter {
     pub fn call(&mut self, func: &RootedVal, args: Vec<RootedVal>) -> RootedVal {
         let res = match func {
             RootedVal::Func(func) => {
-                check_ptr!(self.heap, func);
                 let (func_body, func_args, func_globals) = {
                     let func = self.get_ref(func);
                     (func.body.clone(), func.args.clone(), func.globals.clone())
@@ -141,7 +132,6 @@ impl Interpreter {
                 )
             }
             RootedVal::Lambda(lambda_ref) => {
-                check_ptr!(self.heap, lambda_ref);
                 let (func_body, func_args, func_env, func_globals) = {
                     let func = self.get_ref(lambda_ref);
                     (
@@ -192,8 +182,7 @@ impl Interpreter {
             WeakVal::Symbol(val) => *val,
             _ => return Err(NotSpecialForm),
         };
-        let symbol = symbol.try_into();
-        match symbol {
+        match symbol.try_into() {
             Ok(BuiltinSymbols::Define) => Ok(self.eval_define(vals)),
             Ok(BuiltinSymbols::Begin) => Ok(self.eval_begin(vals)),
             Ok(BuiltinSymbols::Quote) => Ok(self.eval_quote(vals)),
@@ -447,11 +436,7 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        assert_eq!(
-            self.get_ref(expr).len(),
-            3,
-            "set form takes 2 arguments"
-        );
+        assert_eq!(self.get_ref(expr).len(), 3, "set form takes 2 arguments");
         let location = self.get_ref(expr)[1].clone();
         let val = self.get_ref(expr)[2].clone();
         let val = self.eval_weak(&val);
@@ -564,6 +549,7 @@ impl Interpreter {
     }
 
     #[cfg(debug)]
+    #[inline]
     fn get_ref<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
     where
         Ptr: ScopedRef<T> + HeapMarked,
@@ -572,11 +558,13 @@ impl Interpreter {
     }
 
     #[cfg(not(debug))]
+    #[inline]
     fn get_ref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         self.heap.deref_ptr(ptr)
     }
 
     #[cfg(debug)]
+    #[inline]
     fn get_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
     where
         Ptr: ScopedRef<T> + HeapMarked,
@@ -585,29 +573,35 @@ impl Interpreter {
     }
 
     #[cfg(not(debug))]
+    #[inline]
     fn get_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         self.heap.deref_ptr_mut(ptr)
     }
 
+    #[inline]
     pub fn get_frame(&self) -> &FuncFrame {
         self.call_stack.last().unwrap()
     }
 
+    #[inline]
     pub fn get_frame_mut(&mut self) -> &mut FuncFrame {
         self.call_stack.last_mut().unwrap()
     }
 
+    #[inline]
     pub fn get_globals(&self) -> Env {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
         self.get_frame().globals.clone()
     }
 
+    #[inline]
     pub fn get_locals(&self) -> Option<Env> {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
         self.get_frame().locals.clone()
     }
+
     pub fn run_gc(&mut self) {
         self.gc
             .step(&mut self.heap, &mut self.call_stack, &mut self.modules);
@@ -619,11 +613,13 @@ impl Interpreter {
     }
 }
 
+#[inline]
 fn func_call_env(heap: &mut Heap, args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
     let func_env = Environment::new();
     populate_env(heap, func_env, args, values)
 }
 
+#[inline]
 fn func_call_env_with_parent(
     heap: &mut Heap,
     args: &[SymbolId],
@@ -702,6 +698,7 @@ where
     res
 }
 
+#[inline]
 fn map_scoped_vec<Ptr, Func, Res>(vm: &mut Interpreter, ptr: &Ptr, func: Func) -> Vec<Res>
 where
     Ptr: ScopedRef<Vec<WeakVal>>,
