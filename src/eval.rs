@@ -297,15 +297,7 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        let mut allocs = Vec::new();
-        let size = self.get_ref(vals).len();
-        for i in 1..size {
-            let raw_value = {
-                let inner_ref = &self.get_ref(vals)[i];
-                inner_ref.clone()
-            };
-            allocs.push(self.eval_weak(&raw_value));
-        }
+        let mut allocs = map_scoped_vec_range(self, vals, |vm, val| vm.eval_weak(val), (1, 0));
         let res = allocs.pop().unwrap();
         drop_rooted_vec(&mut self.heap, allocs);
         res
@@ -537,11 +529,10 @@ impl Interpreter {
             }
         };
         // eval body
-        let results = map_scoped_vec_range(self, expr, |vm, val| vm.eval_weak(val), (2, 0));
+        let mut results = map_scoped_vec_range(self, expr, |vm, val| vm.eval_weak(val), (2, 0));
         let res = results
-            .last()
-            .expect("Let evaluation should not yield empty results")
-            .clone(&mut self.heap);
+            .pop()
+            .expect("Let evaluation should not yield empty results");
         drop_rooted_vec(&mut self.heap, results);
         // pop local env
         self.get_frame_mut().locals = let_env.into_parent();
