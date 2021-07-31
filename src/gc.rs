@@ -1,8 +1,4 @@
-use std::{
-    collections::{BTreeSet, HashMap},
-    ops::{Deref, DerefMut},
-    ptr,
-};
+use std::{collections::{BTreeSet, HashMap}, marker::PhantomData, ops::{Deref, DerefMut}, ptr};
 
 use crate::{
     data::Environment,
@@ -90,6 +86,8 @@ pub unsafe trait ScopeGuard {}
 pub struct Root<T: ?Sized> {
     data: ptr::NonNull<T>,
     pub entry_index: usize,
+
+    _phantom: PhantomData<T>,
 }
 
 impl<T> PartialEq for Root<T> {
@@ -347,6 +345,7 @@ impl Heap {
         Root {
             data: unsafe { ptr::NonNull::new_unchecked(ptr) },
             entry_index,
+            _phantom: PhantomData,
         }
     }
 
@@ -451,6 +450,7 @@ impl Heap {
         Root {
             data: ptr.data.clone(),
             entry_index: ptr.entry_index,
+            _phantom: PhantomData,
         }
     }
 
@@ -472,6 +472,7 @@ impl Heap {
         Root {
             data: ptr.data,
             entry_index: ptr.entry_index,
+            _phantom: PhantomData,
         }
     }
 
