@@ -1,4 +1,4 @@
-use crate::runtime::{RootedVal, WeakVal};
+use crate::runtime::WeakVal;
 use std::{cell::RefCell, collections::HashMap, convert::TryFrom, rc::Rc};
 
 pub struct EnvironmentImpl {
