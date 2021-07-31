@@ -23,8 +23,9 @@
 11. Rest arguments in functions
 12. Key-word args?
 13. Errors
-14. Gen-sym std-lib
-15. Stack vm (does not seem so bad but we need a compiler actually)
-16. Namespacing
-17. Objects?
-18. Iterators and coroutines would be so coool
+14. Add quasiqote list unpacking
+15. Gen-sym std-lib
+16. Stack vm (does not seem so bad but we need a compiler actually)
+17. Namespacing
+18. Objects?
+19. Iterators and coroutines would be so coool
