@@ -4,6 +4,7 @@ use std::convert::TryInto;
 use crate::check_ptr;
 use crate::data::{BuiltinSymbols, Environment, SymbolId, SymbolTable};
 use crate::gc::{Heap, HeapMarked, MarkSweep, ScopedRef};
+use crate::gc::{ScopedMutPtr, ScopedPtr};
 use crate::runtime::{drop_rooted_vec, RootedVal, WeakVal};
 use crate::utils::JoinedIterator;
 
@@ -514,7 +515,86 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        RootedVal::none()
+        let size = self.get_ref(expr).len();
+        assert!(size > 2, "let form needs at least 2 arguments");
+        let bindings = self.get_ref(expr)[1].clone();
+        // prepare let env
+        let mut evaled_bindings = HashMap::new();
+        match &bindings {
+            WeakVal::List(inner) => {
+                let to_evaluate = map_scoped_vec(self, inner, |vm, binding| match binding {
+                    WeakVal::List(binding) => match &vm.get_ref(binding)[..] {
+                        [WeakVal::Symbol(name), body] => (*name, body.clone()),
+                        _ => panic!("Wrong binding form, expected Symbol and an expression"),
+                    },
+                    _ => panic!("Each binding should be a list of length 2"),
+                });
+                for (name, body) in to_evaluate {
+                    let body = self.eval_weak(&body);
+                    evaled_bindings.insert(name, body);
+                }
+            }
+            _ => panic!("Let bindings have to be a list"),
+        };
+        let let_env: HashMap<_, _> = evaled_bindings
+            .into_iter()
+            .map(|(name, val)| (name, val.downgrade(&mut self.heap)))
+            .collect();
+        let mut let_env: Environment = let_env.into();
+        {
+            let curr_frame = self.get_frame_mut();
+            match &curr_frame.locals {
+                None => curr_frame.locals = Some(let_env.clone()),
+                Some(env) => {
+                    let_env.reparent(env.clone());
+                    curr_frame.locals = Some(let_env.clone())
+                }
+            }
+        };
+        // eval body
+        let results = map_scoped_vec_range(self, expr, |vm, val| vm.eval_weak(val), (2, 0));
+        let res = results
+            .last()
+            .expect("Let evaluation should not yield empty results")
+            .clone(&mut self.heap);
+        drop_rooted_vec(&mut self.heap, results);
+        // pop local env
+        self.get_frame_mut().locals = let_env.into_parent();
+        res
+    }
+
+    #[cfg(debug)]
+    fn get_ref<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
+    where
+        Ptr: ScopedRef<T> + HeapMarked,
+    {
+        self.heap.deref_ptr(ptr)
+    }
+
+    #[cfg(not(debug))]
+    fn get_ref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
+        self.heap.deref_ptr(ptr)
+    }
+
+    #[cfg(debug)]
+    fn get_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
+    where
+        Ptr: ScopedRef<T> + HeapMarked,
+    {
+        self.heap.deref_ptr_mut(ptr)
+    }
+
+    #[cfg(not(debug))]
+    fn get_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
+        self.heap.deref_ptr_mut(ptr)
+    }
+
+    pub fn get_frame(&self) -> &FuncFrame {
+        self.call_stack.last().unwrap()
+    }
+
+    pub fn get_frame_mut(&mut self) -> &mut FuncFrame {
+        self.call_stack.last_mut().unwrap()
     }
 
     pub fn get_globals(&self) -> Env {

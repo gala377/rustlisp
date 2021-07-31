@@ -439,12 +439,9 @@ impl Heap {
     where
         Ptr: ScopedRef<T> + HeapMarked,
     {
-        if cfg!(debug) {
-            check_ptr!(self, ptr);
-        }
+        check_ptr!(self, ptr);
         ScopedPtr {
             value: ptr.scoped_ref(self),
-            // guard: self,
         }
     }
 
@@ -452,7 +449,6 @@ impl Heap {
     pub fn deref_ptr<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         ScopedPtr {
             value: ptr.scoped_ref(self),
-            // guard: self,
         }
     }
 
@@ -461,12 +457,9 @@ impl Heap {
     where
         Ptr: ScopedRef<T> + HeapMarked,
     {
-        if cfg!(debug) {
-            check_ptr!(self, ptr);
-        }
+        check_ptr!(self, ptr);
         ScopedMutPtr {
             value: ptr.scoped_ref_mut(self),
-            // guard: self,
         }
     }
 
@@ -474,7 +467,6 @@ impl Heap {
     pub fn deref_ptr_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         ScopedMutPtr {
             value: ptr.scoped_ref_mut(self),
-            // guard: self,
         }
     }
 

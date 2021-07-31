@@ -1,4 +1,4 @@
-use crate::runtime::WeakVal;
+use crate::runtime::{RootedVal, WeakVal};
 use std::{cell::RefCell, collections::HashMap, convert::TryFrom, rc::Rc};
 
 pub struct EnvironmentImpl {
@@ -40,6 +40,10 @@ impl Environment {
         Self::wrap(EnvironmentImpl::with_parent(parent))
     }
 
+    pub fn reparent(&mut self, parent: Environment) {
+        self.borrow_mut().parent = Some(parent);
+    }
+
     pub fn borrow(&self) -> std::cell::Ref<EnvironmentImpl> {
         self.0.borrow()
     }
@@ -50,6 +54,15 @@ impl Environment {
 
     pub fn into_parent(self) -> Option<Environment> {
         self.0.borrow().parent.clone()
+    }
+}
+
+impl From<HashMap<SymbolId, WeakVal>> for Environment {
+    fn from(values: HashMap<SymbolId, WeakVal>) -> Self {
+        Self(Rc::new(RefCell::new(EnvironmentImpl {
+            parent: None,
+            values,
+        })))
     }
 }
 
