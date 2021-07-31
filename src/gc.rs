@@ -1,4 +1,10 @@
-use std::{collections::{BTreeSet, HashMap}, marker::PhantomData, ops::{Deref, DerefMut}, ptr};
+use std::{
+    cell::UnsafeCell,
+    collections::{BTreeSet, HashMap},
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    ptr,
+};
 
 use crate::{
     data::Environment,
@@ -27,7 +33,6 @@ macro_rules! check_ptr {
 
 pub struct ScopedPtr<'guard, T> {
     pub value: &'guard T,
-    // guard: &'guard dyn ScopeGuard,
 }
 
 impl<T> Deref for ScopedPtr<'_, T> {
@@ -40,7 +45,6 @@ impl<T> Deref for ScopedPtr<'_, T> {
 
 pub struct ScopedMutPtr<'guard, T> {
     pub value: &'guard mut T,
-    // guard: &'guard mut dyn ScopeGuard,
 }
 
 impl<T> Deref for ScopedMutPtr<'_, T> {
@@ -84,7 +88,13 @@ pub trait HeapMarked {
 pub unsafe trait ScopeGuard {}
 
 pub struct Root<T: ?Sized> {
-    data: ptr::NonNull<T>,
+    // TODO: Documentation for `NonNull` states that if you created `NonNull`
+    // pointer by using `Into` or `From` traits on shared reference &T then
+    // mutations on the T using this pointer are UB unless they happen inside
+    // `UnsafeCell`. The pointer here is not obtained through shared reference
+    // but through `Box::into_raw(Box::new(T))` so maybe we don't need an
+    // `UnsafeCell` here. We should check that.
+    data: ptr::NonNull<UnsafeCell<T>>,
     pub entry_index: usize,
 
     _phantom: PhantomData<T>,
@@ -108,7 +118,7 @@ impl<T> ScopedRef<T> for Root<T> {
         // mutator's execution.
         // If the user implements ScopeGuard themselves it's their responsibility
         // to ensure that the rust invariants will be upheld.
-        unsafe { self.data.as_ref() }
+        unsafe { &*self.data.as_ref().get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
@@ -120,7 +130,7 @@ impl<T> ScopedRef<T> for Root<T> {
         // mutator's execution.
         // If the user implements ScopeGuard themselves it's their responsibility
         // to ensure that the rust invariants will be upheld.
-        unsafe { self.data.as_mut() }
+        unsafe { &mut *self.data.as_ref().get() }
     }
 }
 
@@ -137,7 +147,13 @@ impl<T: ?Sized> Drop for Root<T> {
 }
 
 pub struct Weak<T: ?Sized> {
-    data: ptr::NonNull<T>,
+    // TODO: Documentation for `NonNull` states that if you created `NonNull`
+    // pointer by using `Into` or `From` traits on shared reference &T then
+    // mutations on the T using this pointer are UB unless they happen inside
+    // `UnsafeCell`. The pointer here is not obtained through shared reference
+    // but through `Box::into_raw(Box::new(T))` so maybe we don't need an
+    // `UnsafeCell` here. We should check that.
+    data: ptr::NonNull<UnsafeCell<T>>,
     entry_index: usize,
 }
 
@@ -151,11 +167,35 @@ impl<T> Eq for Weak<T> {}
 
 impl<T> ScopedRef<T> for Weak<T> {
     fn scoped_ref<'a>(&'a self, _guard: &'a dyn ScopeGuard) -> &'a T {
-        unsafe { self.data.as_ref() }
+        // TODO: Actually this is unsafe as weak does not extend references
+        // lifetime so the pointer can point to freed data.
+        // Technically this should never happen as Interpreter keeps all
+        // reachable `Weak` pointers alive but the problem happen if the weak
+        // pointer is cloned outside. So to make this absolutely safe we should
+        // check if the pointer has been dropped, if not then check if the pointer
+        // is still the same as it could change and that means that this pointer
+        // was freed. If the pointer is valid we should root it. Then we can
+        // safely dereference, which is a lot of work tbh.
+        //
+        // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
+        // tracked containers.
+        unsafe { &*self.data.as_ref().get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
-        unsafe { self.data.as_mut() }
+        // TODO: Actually this is unsafe as weak does not extend references
+        // lifetime so the pointer can point to freed data.
+        // Technically this should never happen as Interpreter keeps all
+        // reachable `Weak` pointers alive but the problem happen if the weak
+        // pointer is cloned outside. So to make this absolutely safe we should
+        // check if the pointer has been dropped, if not then check if the pointer
+        // is still the same as it could change and that means that this pointer
+        // was freed. If the pointer is valid we should root it. Then we can
+        // safely dereference, which is a lot of work tbh.
+        //
+        // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
+        // tracked containers.
+        unsafe { &mut *self.data.as_ref().get() }
     }
 }
 
@@ -215,7 +255,7 @@ impl Header {
 }
 
 pub struct HeapEntry {
-    pub data: Option<ptr::NonNull<()>>,
+    pub data: Option<ptr::NonNull<UnsafeCell<()>>>,
     pub header: Header,
 }
 
@@ -261,9 +301,8 @@ impl HeapEntry {
     }
 }
 
-unsafe fn safe_drop_and_free<T>(ptr: *mut ()) {
-    let ptr = ptr as *mut T;
-    //std::ptr::drop_in_place(ptr);
+unsafe fn safe_drop_and_free<T>(ptr: *mut UnsafeCell<()>) {
+    let ptr = ptr as *mut UnsafeCell<T>;
     drop(Box::from_raw(ptr));
 }
 
@@ -335,15 +374,14 @@ impl Heap {
             weak_count: 0,
             dropped: false,
         };
-        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut ()) };
+        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut UnsafeCell<()>) };
         let entry = HeapEntry {
             data: Some(ptr.clone()),
             header,
         };
         let entry_index = self.insert_entry(entry);
-        let ptr = ptr.as_ptr() as *mut T;
         Root {
-            data: unsafe { ptr::NonNull::new_unchecked(ptr) },
+            data: unsafe { ptr::NonNull::new_unchecked(data) },
             entry_index,
             _phantom: PhantomData,
         }
@@ -440,8 +478,8 @@ impl Heap {
         }
     }
 
-    fn heap_allocate<T>(val: T) -> *mut T {
-        let ptr = Box::new(val);
+    fn heap_allocate<T>(val: T) -> *mut UnsafeCell<T> {
+        let ptr = Box::new(UnsafeCell::new(val));
         Box::into_raw(ptr)
     }
 
@@ -875,7 +913,7 @@ mod tests {
     fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
         let mut heap = Heap::with_capacity(10);
         let mut ptr1 = heap.allocate(Vec::new());
-        unsafe { ptr1.data.as_mut().push(WeakVal::NumberVal(2.0)) }
+        unsafe { ptr1.data.as_mut().get_mut().push(WeakVal::NumberVal(2.0)) }
         let data_ref = *(&heap.entries[ptr1.entry_index]
             .data
             .as_ref()
@@ -936,7 +974,7 @@ mod tests {
         let mut heap = Heap::with_capacity(1);
         let mut ptr = heap.allocate(Vec::new());
         let ptr2 = heap.allocate(String::new());
-        unsafe { ptr.data.as_mut().push(WeakVal::NumberVal(10.0)) };
+        unsafe { ptr.data.as_mut().get_mut().push(WeakVal::NumberVal(10.0)) };
         let data_ref = *(&heap.entries[ptr.entry_index]
             .data
             .as_ref()
@@ -958,7 +996,7 @@ mod tests {
     fn heap_allocation_preserves_data() {
         let mut heap = Heap::new();
         let ptr = heap.allocate("Hello".to_string());
-        assert_eq!(unsafe { ptr.data.as_ref().clone() }, "Hello");
+        assert_eq!(unsafe { (&*ptr.data.as_ref().get()).clone() }, "Hello");
         heap.drop_root(ptr);
     }
 }

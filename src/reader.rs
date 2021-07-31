@@ -1,4 +1,8 @@
-use crate::{data::{BuiltinSymbols, SymbolId, SymbolTableBuilder}, gc::Heap, runtime::{RootedVal, drop_rooted_vec}};
+use crate::{
+    data::{BuiltinSymbols, SymbolId, SymbolTableBuilder},
+    gc::Heap,
+    runtime::{drop_rooted_vec, RootedVal},
+};
 
 #[derive(Debug)]
 pub enum ParseError {

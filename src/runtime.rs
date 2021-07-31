@@ -253,7 +253,7 @@ impl RootedVal {
     pub fn is_callable(&self) -> bool {
         match self {
             Self::Func(_) | Self::NativeFunc(_) | Self::Lambda(_) => true,
-            _ => false
+            _ => false,
         }
     }
 }

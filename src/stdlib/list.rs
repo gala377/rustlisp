@@ -5,7 +5,7 @@ use crate::{
 
 use crate::runtime::RootedVal::*;
 
-native_module!{
+native_module! {
     make_list(vm, args) => RootedVal::list_from_rooted(args, &mut vm.heap);
 
     is_list(vm, args) {

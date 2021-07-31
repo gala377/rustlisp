@@ -23,7 +23,6 @@ macro_rules! native_untyped_fn {
     };
 }
 
-
 #[macro_export]
 macro_rules! native_typed_fn {
     ($name:ident ( $vm:ident, $( $args:pat ),* ) $body:expr) => {
@@ -188,8 +187,8 @@ fn define_native_functions(
 
 use RootedVal::*;
 
-native_module!{
-    typed less_than(vm, NumberVal(a), NumberVal(b)) => 
+native_module! {
+    typed less_than(vm, NumberVal(a), NumberVal(b)) =>
         RootedVal::predicate(*a < *b);
 
     print_globals(vm, args) {

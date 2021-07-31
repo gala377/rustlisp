@@ -421,7 +421,10 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        assert!(self.heap.deref_ptr(expr).len() > 2, "while expr needs at least 2 clauses");
+        assert!(
+            self.heap.deref_ptr(expr).len() > 2,
+            "while expr needs at least 2 clauses"
+        );
         let cond = self.heap.deref_ptr(expr)[1].clone();
         let size = self.heap.deref_ptr(expr).len();
         while {
@@ -441,9 +444,13 @@ impl Interpreter {
 
     fn eval_set<Ptr>(&mut self, expr: &Ptr) -> RootedVal
     where
-        Ptr: ScopedRef<Vec<WeakVal>>
+        Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        assert_eq!(self.heap.deref_ptr(expr).len(), 3, "set form takes 2 arguments");
+        assert_eq!(
+            self.heap.deref_ptr(expr).len(),
+            3,
+            "set form takes 2 arguments"
+        );
         let location = self.heap.deref_ptr(expr)[1].clone();
         let val = self.heap.deref_ptr(expr)[2].clone();
         let val = self.eval_weak(&val);
@@ -474,20 +481,18 @@ impl Interpreter {
                         None => panic!("Trying to set! not defined location"),
                     }
                 }
-            },
+            }
             WeakVal::List(inner) => {
                 let (list_expr, index_expr) = match &self.heap.deref_ptr(inner)[..] {
-                    [list_expr, index_expr] => {
-                        (list_expr.clone(), index_expr.clone())
-                    }
-                    _ => panic!("Invalid list set!")
+                    [list_expr, index_expr] => (list_expr.clone(), index_expr.clone()),
+                    _ => panic!("Invalid list set!"),
                 };
-                let (mut list, index) =  {
+                let (mut list, index) = {
                     let list = self.eval_weak(&list_expr);
                     let index = self.eval_weak(&index_expr);
                     match (list, index) {
                         (RootedVal::List(ptr), RootedVal::NumberVal(index)) => (ptr, index),
-                        _ => panic!("List set! target types mismatched")
+                        _ => panic!("List set! target types mismatched"),
                     }
                 };
                 let index = index as usize;
@@ -498,15 +503,17 @@ impl Interpreter {
                 let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
                 self.heap.deref_ptr_mut(&mut list)[index] = val;
                 self.heap.drop_root(list);
-            },
-            _ => panic!("Invalid set!")
+            }
+            _ => panic!("Invalid set!"),
         }
         val.heap_drop(&mut self.heap);
         RootedVal::none()
     }
 
-    fn eval_let<Ptr>(&mut self, expr: &Ptr) -> RootedVal 
-    where Ptr: ScopedRef<Vec<WeakVal>> {
+    fn eval_let<Ptr>(&mut self, expr: &Ptr) -> RootedVal
+    where
+        Ptr: ScopedRef<Vec<WeakVal>>,
+    {
         RootedVal::none()
     }
 
