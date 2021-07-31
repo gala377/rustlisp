@@ -201,6 +201,8 @@ generate_builtin_symbols! {
         ("if": 10) => If,
         ("none": 11) => None,
         ("set!": 12) => Set,
+        ("macro": 13) => Macro,
+        ("let": 14) => Let,
     }
 }
 

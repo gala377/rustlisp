@@ -202,6 +202,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::If) => Ok(self.eval_if(vals)),
             Ok(BuiltinSymbols::While) => Ok(self.eval_while(vals)),
             Ok(BuiltinSymbols::Set) => Ok(self.eval_set(vals)),
+            Ok(BuiltinSymbols::Let) => Ok(self.eval_let(vals)),
             _ => Err(NotSpecialForm),
         }
     }
@@ -504,6 +505,11 @@ impl Interpreter {
         RootedVal::none()
     }
 
+    fn eval_let<Ptr>(&mut self, expr: &Ptr) -> RootedVal 
+    where Ptr: ScopedRef<Vec<WeakVal>> {
+        RootedVal::none()
+    }
+
     pub fn get_globals(&self) -> Env {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
@@ -522,7 +528,6 @@ impl Interpreter {
 
     pub fn get_value(&mut self, name: &str) -> Option<RootedVal> {
         let symbol = self.symbols.iter().position(|val| val == name)?;
-        // println!("Got symbol {}", symbol);
         Some(self.eval_symbol(symbol))
     }
 }

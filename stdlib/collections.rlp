@@ -1,13 +1,15 @@
 (__load "stdlib/numeric.rlp")
 (__load "stdlib/defines.rlp")
 
+(def (std/coll/empty) '())
+
 (def (std/coll/map func values)
     (def length (size values))
     (def result '())
     (def i 0)
     (while (less-than i length)
         (push! result
-            (func (nth values i)))
+               (func (nth values i)))
         (set! i (inc i)))
     result)
 

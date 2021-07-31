@@ -1,0 +1,23 @@
+(__load "stdlib/defines.rlp")
+(__load "stdlib/numeric.rlp")
+
+
+(def (std/rec/range n)
+    (def (range i n acc)
+        (push! acc i)
+        (if (eq? i n )
+            acc
+            (range (inc i) n acc)))
+    (range 0 n '()))
+
+
+(def (std/rec/map func values)
+    (def (map func values acc)
+        (def i (size acc))
+        (if (eq? i (size values))
+            acc
+            (begin
+                (def mapped (func (nth values i)))
+                (push! acc mapped)
+                (map func values acc))))
+    (map func values '()))
