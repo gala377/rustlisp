@@ -101,17 +101,17 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        if self.heap.deref_ptr(vals).is_empty() {
+        if self.get_ref(vals).is_empty() {
             return RootedVal::nil(&mut self.heap);
         }
         if let Ok(val) = self.try_eval_special_form(vals) {
             return val;
         }
-        let size = self.heap.deref_ptr(vals).len();
+        let size = self.get_ref(vals).len();
         let mut evaled = Vec::new();
         for i in 0..size {
             let raw_value = {
-                let ptr_ref = &self.heap.deref_ptr(vals)[i];
+                let ptr_ref = &self.get_ref(vals)[i];
                 ptr_ref.clone()
             };
             let evaled_value = self.eval_weak(&raw_value);
@@ -128,7 +128,7 @@ impl Interpreter {
             RootedVal::Func(func) => {
                 check_ptr!(self.heap, func);
                 let (func_body, func_args, func_globals) = {
-                    let func = self.heap.deref_ptr(func);
+                    let func = self.get_ref(func);
                     (func.body.clone(), func.args.clone(), func.globals.clone())
                 };
                 let func_env = func_call_env(&mut self.heap, &func_args, args);
@@ -143,7 +143,7 @@ impl Interpreter {
             RootedVal::Lambda(lambda_ref) => {
                 check_ptr!(self.heap, lambda_ref);
                 let (func_body, func_args, func_env, func_globals) = {
-                    let func = self.heap.deref_ptr(lambda_ref);
+                    let func = self.get_ref(lambda_ref);
                     (
                         func.body.clone(),
                         func.args.clone(),
@@ -188,7 +188,7 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        let symbol = match &self.heap.deref_ptr(vals)[0] {
+        let symbol = match &self.get_ref(vals)[0] {
             WeakVal::Symbol(val) => *val,
             _ => return Err(NotSpecialForm),
         };
@@ -229,7 +229,7 @@ impl Interpreter {
             Some(val) => val.clone(),
         };
         let constr = {
-            let vals_ref = self.heap.deref_ptr(vals);
+            let vals_ref = self.get_ref(vals);
             match &vals_ref[..] {
                 // variable define form
                 [_, WeakVal::Symbol(name), val] => Pattern::Value {
@@ -238,7 +238,7 @@ impl Interpreter {
                 },
                 // function define form
                 [_, WeakVal::List(inner), body @ ..] => {
-                    if let [WeakVal::Symbol(name), args @ ..] = &self.heap.deref_ptr(inner)[..] {
+                    if let [WeakVal::Symbol(name), args @ ..] = &self.get_ref(inner)[..] {
                         Pattern::Function {
                             name: *name,
                             args: collect_function_definition_arguments(args),
@@ -287,9 +287,9 @@ impl Interpreter {
             .map(Environment::split)
             .unwrap_or_else(Environment::new);
         let globals = self.get_globals();
-        let (args, body) = match &self.heap.deref_ptr(vals)[..] {
+        let (args, body) = match &self.get_ref(vals)[..] {
             [_, WeakVal::List(args), body @ ..] => {
-                let args = collect_function_definition_arguments(&self.heap.deref_ptr(args));
+                let args = collect_function_definition_arguments(&self.get_ref(args));
                 (args, body.iter().cloned().collect())
             }
             _ => panic!("not a lambda form"),
@@ -309,10 +309,10 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         let mut allocs = Vec::new();
-        let size = self.heap.deref_ptr(vals).len();
+        let size = self.get_ref(vals).len();
         for i in 1..size {
             let raw_value = {
-                let inner_ref = &self.heap.deref_ptr(vals)[i];
+                let inner_ref = &self.get_ref(vals)[i];
                 inner_ref.clone()
             };
             allocs.push(self.eval_weak(&raw_value));
@@ -327,11 +327,11 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         assert_eq!(
-            self.heap.deref_ptr(vals).len(),
+            self.get_ref(vals).len(),
             2,
             "you can only quote single expression"
         );
-        let quoted = self.heap.deref_ptr(vals)[1].clone();
+        let quoted = self.get_ref(vals)[1].clone();
         // Quote is just passing unevaluated code
         // the only thing we need to do is root it.
         quoted.upgrade(&mut self.heap)
@@ -342,11 +342,11 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         assert_eq!(
-            self.heap.deref_ptr(vals).len(),
+            self.get_ref(vals).len(),
             2,
             "you can only quote single expression"
         );
-        let expr = self.heap.deref_ptr(vals)[1].clone();
+        let expr = self.get_ref(vals)[1].clone();
         self.quasiquote_expr(&expr)
     }
 
@@ -358,8 +358,8 @@ impl Interpreter {
         }
         let action = match expr {
             WeakVal::Symbol(_) | WeakVal::NumberVal(_) | WeakVal::StringVal(_) => Action::Upgrade,
-            WeakVal::List(inner) if self.heap.deref_ptr(inner).len() == 2 => {
-                let head = &self.heap.deref_ptr(inner)[0];
+            WeakVal::List(inner) if self.get_ref(inner).len() == 2 => {
+                let head = &self.get_ref(inner)[0];
                 if head.is_symbol(BuiltinSymbols::Unquote as usize) {
                     Action::Unquote
                 } else {
@@ -374,7 +374,7 @@ impl Interpreter {
             Action::Unquote => {
                 if let WeakVal::List(inner) = expr {
                     let raw_val = {
-                        let weak_ref = &self.heap.deref_ptr(inner)[1];
+                        let weak_ref = &self.get_ref(inner)[1];
                         weak_ref.clone()
                     };
                     self.eval_weak(&raw_val)
@@ -398,14 +398,14 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         assert_eq!(
-            self.heap.deref_ptr(expr).len(),
+            self.get_ref(expr).len(),
             4,
             "If has to have condition and two clauses"
         );
         let (predicate, if_true, if_false) = {
-            let predicate = self.heap.deref_ptr(expr)[1].clone();
-            let if_true = self.heap.deref_ptr(expr)[2].clone();
-            let if_false = self.heap.deref_ptr(expr)[3].clone();
+            let predicate = self.get_ref(expr)[1].clone();
+            let if_true = self.get_ref(expr)[2].clone();
+            let if_false = self.get_ref(expr)[3].clone();
             (predicate, if_true, if_false)
         };
         let res = self.eval_weak(&predicate);
@@ -423,11 +423,11 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         assert!(
-            self.heap.deref_ptr(expr).len() > 2,
+            self.get_ref(expr).len() > 2,
             "while expr needs at least 2 clauses"
         );
-        let cond = self.heap.deref_ptr(expr)[1].clone();
-        let size = self.heap.deref_ptr(expr).len();
+        let cond = self.get_ref(expr)[1].clone();
+        let size = self.get_ref(expr).len();
         while {
             let cond_value = self.eval_weak(&cond);
             let next_it = cond_value.is_symbol(BuiltinSymbols::True as usize);
@@ -435,7 +435,7 @@ impl Interpreter {
             next_it
         } {
             for i in 2..size {
-                let code = self.heap.deref_ptr(expr)[i].clone();
+                let code = self.get_ref(expr)[i].clone();
                 let res = self.eval_weak(&code);
                 res.heap_drop(&mut self.heap);
             }
@@ -448,12 +448,12 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         assert_eq!(
-            self.heap.deref_ptr(expr).len(),
+            self.get_ref(expr).len(),
             3,
             "set form takes 2 arguments"
         );
-        let location = self.heap.deref_ptr(expr)[1].clone();
-        let val = self.heap.deref_ptr(expr)[2].clone();
+        let location = self.get_ref(expr)[1].clone();
+        let val = self.get_ref(expr)[2].clone();
         let val = self.eval_weak(&val);
         match &location {
             WeakVal::Symbol(inner) => {
@@ -484,7 +484,7 @@ impl Interpreter {
                 }
             }
             WeakVal::List(inner) => {
-                let (list_expr, index_expr) = match &self.heap.deref_ptr(inner)[..] {
+                let (list_expr, index_expr) = match &self.get_ref(inner)[..] {
                     [list_expr, index_expr] => (list_expr.clone(), index_expr.clone()),
                     _ => panic!("Invalid list set!"),
                 };
@@ -497,12 +497,12 @@ impl Interpreter {
                     }
                 };
                 let index = index as usize;
-                let len = self.heap.deref_ptr(&list).len();
+                let len = self.get_ref(&list).len();
                 if index >= len {
                     panic!("Trying to set list location past its size")
                 }
                 let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
-                self.heap.deref_ptr_mut(&mut list)[index] = val;
+                self.get_mut(&mut list)[index] = val;
                 self.heap.drop_root(list);
             }
             _ => panic!("Invalid set!"),
@@ -600,13 +600,13 @@ impl Interpreter {
     pub fn get_globals(&self) -> Env {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
-        self.call_stack.last().unwrap().globals.clone()
+        self.get_frame().globals.clone()
     }
 
     pub fn get_locals(&self) -> Option<Env> {
         // todo: do match instead of unwrap because
         // unwrap generates a lot od stack unwinding code
-        self.call_stack.last().unwrap().locals.clone()
+        self.get_frame().locals.clone()
     }
     pub fn run_gc(&mut self) {
         self.gc
@@ -691,10 +691,10 @@ where
     Func: FnMut(&mut Interpreter, &WeakVal) -> Res,
 {
     let mut res = Vec::new();
-    let size = vm.heap.deref_ptr(ptr).len();
+    let size = vm.get_ref(ptr).len();
     for i in range.0..(size - range.1) {
         let raw_val = {
-            let val = &vm.heap.deref_ptr(ptr)[i];
+            let val = &vm.get_ref(ptr)[i];
             val.clone()
         };
         res.push(func(vm, &raw_val));
