@@ -408,18 +408,14 @@ impl Interpreter {
             "while expr needs at least 2 clauses"
         );
         let cond = self.get_ref(expr)[1].clone();
-        let size = self.get_ref(expr).len();
         while {
             let cond_value = self.eval_weak(&cond);
             let next_it = cond_value.is_symbol(BuiltinSymbols::True as usize);
             cond_value.heap_drop(&mut self.heap);
             next_it
         } {
-            for i in 2..size {
-                let code = self.get_ref(expr)[i].clone();
-                let res = self.eval_weak(&code);
-                res.heap_drop(&mut self.heap);
-            }
+            let allocs = map_scoped_vec_range(self, expr, |vm, val| vm.eval_weak(val), (2, 0));
+            drop_rooted_vec(&mut self.heap, allocs);
         }
         RootedVal::none()
     }
