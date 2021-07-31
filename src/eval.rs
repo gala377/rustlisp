@@ -297,7 +297,7 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        let mut allocs = map_scoped_vec_range(self, vals, |vm, val| vm.eval_weak(val), (1, 0));
+        let mut allocs = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
         let res = allocs.pop().unwrap();
         drop_rooted_vec(&mut self.heap, allocs);
         res
@@ -414,7 +414,7 @@ impl Interpreter {
             cond_value.heap_drop(&mut self.heap);
             next_it
         } {
-            let allocs = map_scoped_vec_range(self, expr, |vm, val| vm.eval_weak(val), (2, 0));
+            let allocs = map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
             drop_rooted_vec(&mut self.heap, allocs);
         }
         RootedVal::none()
@@ -525,7 +525,7 @@ impl Interpreter {
             }
         };
         // eval body
-        let mut results = map_scoped_vec_range(self, expr, |vm, val| vm.eval_weak(val), (2, 0));
+        let mut results = map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
         let res = results
             .pop()
             .expect("Let evaluation should not yield empty results");
@@ -666,8 +666,8 @@ fn prepare_function_body(mut body: Vec<WeakVal>, heap: &mut Heap) -> RootedVal {
 fn map_scoped_vec_range<Ptr, Func, Res>(
     vm: &mut Interpreter,
     ptr: &Ptr,
-    mut func: Func,
     range: (usize, usize),
+    mut func: Func,
 ) -> Vec<Res>
 where
     Ptr: ScopedRef<Vec<WeakVal>>,
@@ -691,5 +691,5 @@ where
     Ptr: ScopedRef<Vec<WeakVal>>,
     Func: FnMut(&mut Interpreter, &WeakVal) -> Res,
 {
-    map_scoped_vec_range(vm, ptr, func, (0, 0))
+    map_scoped_vec_range(vm, ptr, (0, 0), func)
 }
