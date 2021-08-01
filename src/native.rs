@@ -1,6 +1,6 @@
 use std::any::TypeId;
 
-use crate::{eval::Interpreter, gc::{Heap, Root, Set, Weak}, runtime::RootedVal};
+use crate::{eval::Interpreter, gc::{Heap, Root, Set}, runtime::RootedVal};
 
 
 
@@ -75,7 +75,6 @@ macro_rules! define_visitable_native_struct {
     };
 }
 
-// TODO make those type safe by 
 
 pub fn to_self_mut<'a, T: 'static>(this: &'a mut NativeStructPointer) -> Option<&'a mut T> {
     cast_to_self_mut(&mut this.data)

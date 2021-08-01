@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, collections::HashMap, marker::PhantomData, ops::{Deref, DerefMut}, ptr::{self, NonNull}};
+use std::{cell::UnsafeCell, collections::HashMap, marker::PhantomData, ops::{Deref, DerefMut}, ptr};
 
 use crate::{env::Environment, eval::{FuncFrame, ModuleState}, native::NativeStructPointer, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
 
