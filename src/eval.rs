@@ -595,7 +595,7 @@ impl Interpreter {
     }
 
     pub fn get_value(&mut self, name: &str) -> Option<RootedVal> {
-        let symbol = self.symbols[name];
+        let symbol = self.symbols.get(name)?;
         Some(self.eval_symbol(symbol))
     }
 }

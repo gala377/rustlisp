@@ -95,6 +95,16 @@ pub struct SymbolTable {
 }
 
 impl SymbolTable {
+    pub fn get<Q>(&self, key: &Q) -> Option<SymbolId>
+    where
+        String: Borrow<Q>,
+        Q: std::hash::Hash + Eq + ?Sized,
+    {
+        self.str_to_id.get(key).map(|x| *x)
+    }
+}
+
+impl SymbolTable {
     pub fn builtin() -> Self {
         builtins_symbol_table()
     }
