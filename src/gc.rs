@@ -1,6 +1,6 @@
 use std::{
     cell::UnsafeCell,
-    collections::{BTreeSet, HashMap},
+    collections::HashMap,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr,
@@ -11,6 +11,13 @@ use crate::{
     eval::{FuncFrame, ModuleState},
     runtime::{self, Lambda, RuntimeFunc, WeakVal},
 };
+
+
+#[cfg(feature = "hash_set")]
+type Set<T> = std::collections::HashSet<T>;
+
+#[cfg(not(feature = "hash_set"))]
+type Set<T> = std::collections::BTreeSet<T>;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
@@ -609,7 +616,7 @@ impl MarkSweep {
 
     fn visit_call_stack(
         &self,
-        marked: &mut BTreeSet<usize>,
+        marked: &mut Set<usize>,
         heap: &mut Heap,
         call_stack: &Vec<FuncFrame>,
     ) {
@@ -621,8 +628,8 @@ impl MarkSweep {
         }
     }
 
-    fn traverse_and_mark(&self, heap: &mut Heap) -> BTreeSet<usize> {
-        let mut marked = BTreeSet::new();
+    fn traverse_and_mark(&self, heap: &mut Heap) -> Set<usize> {
+        let mut marked = Set::new();
         let mut curr = heap.first_taken;
 
         const N: usize = 5;
@@ -648,7 +655,7 @@ impl MarkSweep {
         marked
     }
 
-    fn visit_entry(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_entry(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
         if marked.contains(&entry_index) {
             return;
         }
@@ -668,14 +675,14 @@ impl MarkSweep {
         walk_function(self, marked, heap, entry_index);
     }
 
-    fn visit_func(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_func(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
         // todo: remove unsafe usage here
         let func_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const RuntimeFunc;
         let func_ref = unsafe { func_ref.as_ref().unwrap() };
         self.visit_weak_val(marked, heap, &func_ref.body);
     }
 
-    fn visit_list(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_list(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
         // todo: remove unsafe usage here
         let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<WeakVal>;
         let list_ref = unsafe { list_ref.as_ref().unwrap() };
@@ -684,7 +691,7 @@ impl MarkSweep {
             .for_each(|val| self.visit_weak_val(marked, heap, val));
     }
 
-    fn visit_lambda(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_lambda(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
         // todo: remove unsafe usage here
         let lambda_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Lambda;
         let lambda_ref = unsafe { lambda_ref.as_ref().unwrap() };
@@ -692,7 +699,7 @@ impl MarkSweep {
         self.visit_weak_val(marked, heap, &lambda_ref.body);
     }
 
-    fn visit_env(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, env: Environment) {
+    fn visit_env(&self, marked: &mut Set<usize>, heap: &mut Heap, env: Environment) {
         let parent;
         {
             let inner = env.borrow();
@@ -706,7 +713,7 @@ impl MarkSweep {
         }
     }
 
-    fn visit_weak_val(&self, marked: &mut BTreeSet<usize>, heap: &mut Heap, val: &WeakVal) {
+    fn visit_weak_val(&self, marked: &mut Set<usize>, heap: &mut Heap, val: &WeakVal) {
         use WeakVal::*;
         match val {
             Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index),

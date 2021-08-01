@@ -12,4 +12,13 @@ name = "lispy"
 [lib]
 name = "lispylib"
 
+[profile.release]
+lto = "fat"
+# for flamegraph
+debug = true
+panic = "abort"
 [dependencies]
+
+[features]
+default_features = []
+hash_set = []
