@@ -1,10 +1,6 @@
 use std::{cell::UnsafeCell, collections::HashMap, marker::PhantomData, ops::{Deref, DerefMut}, ptr::{self, NonNull}};
 
-use crate::{
-    env::Environment,
-    eval::{FuncFrame, ModuleState},
-    runtime::{self, Lambda, RuntimeFunc, WeakVal},
-};
+use crate::{env::Environment, eval::{FuncFrame, ModuleState}, native::NativeStructPointer, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
 
 #[cfg(feature = "hash_set")]
 pub type Set<T> = std::collections::HashSet<T>;
@@ -18,6 +14,7 @@ pub enum TypeTag {
     List,
     String,
     RuntimeFunc,
+    NativeStructPtr,
     None,
 }
 
@@ -299,6 +296,9 @@ impl HeapEntry {
                 TypeTag::String => {
                     // println!("Dropping string");
                     safe_drop_and_free::<String>(ptr.as_ptr());
+                }
+                TypeTag::NativeStructPtr => {
+                    safe_drop_and_free::<NativeStructPointer>(ptr.as_ptr());
                 }
                 TypeTag::None => (),
             },
@@ -677,6 +677,7 @@ impl MarkSweep {
             TypeTag::List => Self::visit_list,
             TypeTag::Lambda => Self::visit_lambda,
             TypeTag::RuntimeFunc => Self::visit_func,
+            TypeTag::NativeStructPtr => Self::visit_native_struct,
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
             TypeTag::None | TypeTag::String => {
@@ -709,6 +710,14 @@ impl MarkSweep {
         self.visit_env(marked, heap, lambda_ref.env.clone());
         self.visit_weak_val(marked, heap, &lambda_ref.body);
     }
+
+
+    fn visit_native_struct(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
+        let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const NativeStructPointer;
+        let pointer_ref = unsafe { pointer_ref.as_ref().unwrap() };
+        pointer_ref.data.visit(marked, heap);
+    }
+
 
     fn visit_env(&self, marked: &mut Set<usize>, heap: &mut Heap, env: Environment) {
         let parent;
@@ -811,6 +820,7 @@ fn print_debug_value(heap: &mut Heap, entry_index: usize) {
             let msg = msg.concat();
             format!("[GC] Dropping list: {}", &msg)
         },
+        _ => format!("[GC] Unsupported tag")
     };
     // println!("{}", to_print);
 }
