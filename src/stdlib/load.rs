@@ -1,6 +1,6 @@
 use crate::{
     check_ptr,
-    data::{Environment},
+    env::Environment,
     eval::{FuncFrame, Interpreter, ModuleState},
     gc::HeapMarked,
     reader::{self, AST},
@@ -62,9 +62,7 @@ pub fn load_from_file(vm: &mut Interpreter, file_path: String, load_std_env: boo
 
 fn load_module(vm: &mut Interpreter, source: &str, load_std_env: bool) -> Environment {
     let symbol_table = &mut vm.symbols;
-    let AST {
-        program,
-    } = reader::read(&source, &mut vm.heap, symbol_table).unwrap();
+    let AST { program } = reader::read(&source, &mut vm.heap, symbol_table).unwrap();
     let file_env = stdlib::empty_env(symbol_table);
     vm.call_stack.push(FuncFrame {
         globals: file_env,

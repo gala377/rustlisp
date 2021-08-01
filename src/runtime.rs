@@ -1,7 +1,7 @@
 use crate::{
     check_ptr,
-    data::BuiltinSymbols,
-    data::{Environment, SymbolId, SymbolTable},
+    env::BuiltinSymbols,
+    env::{Environment, SymbolId, SymbolTable},
     eval::Interpreter,
     gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag},
 };

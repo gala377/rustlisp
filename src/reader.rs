@@ -1,4 +1,8 @@
-use crate::{data::{BuiltinSymbols, SymbolId, SymbolTable}, gc::Heap, runtime::{drop_rooted_vec, RootedVal}};
+use crate::{
+    env::{BuiltinSymbols, SymbolId, SymbolTable},
+    gc::Heap,
+    runtime::{drop_rooted_vec, RootedVal},
+};
 
 #[derive(Debug)]
 pub enum ParseError {
@@ -60,7 +64,6 @@ impl From<Vec<RootedVal>> for AST {
         Self { program }
     }
 }
-
 
 pub fn read(
     source: &str,
@@ -223,16 +226,11 @@ where
     ))
 }
 
-fn parse_atom(
-    curr_atom: String,
-    symbol_table: &mut SymbolTable,
-) -> Result<RootedVal, ParseError> {
+fn parse_atom(curr_atom: String, symbol_table: &mut SymbolTable) -> Result<RootedVal, ParseError> {
     // `parse` resolves to `f64`.
     // It also handles negative numbers.
     match curr_atom.parse() {
         Ok(val) => Ok(RootedVal::NumberVal(val)),
-        Err(_) => Ok(RootedVal::Symbol(
-            symbol_table.put_symbol(curr_atom),
-        )),
+        Err(_) => Ok(RootedVal::Symbol(symbol_table.put_symbol(curr_atom))),
     }
 }

@@ -3,7 +3,7 @@ use std::{collections::HashMap, convert::TryInto};
 #[cfg(debug)]
 use crate::gc::HeapMarked;
 use crate::{
-    data::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
+    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
     gc::{Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
     runtime::{drop_rooted_vec, RootedVal, WeakVal},
     utils::JoinedIterator,

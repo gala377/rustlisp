@@ -1,5 +1,7 @@
 use crate::runtime::WeakVal;
-use std::{borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc};
+use std::{
+    borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc,
+};
 
 pub struct EnvironmentImpl {
     pub parent: Option<Environment>,
@@ -86,8 +88,6 @@ impl EnvironmentImpl {
 /// Can be used to quickly compare symbols for identity.
 pub type SymbolId = usize;
 
-
-
 #[derive(Clone)]
 pub struct SymbolTable {
     str_to_id: HashMap<String, SymbolId>,
@@ -123,7 +123,7 @@ where
     }
 }
 
-impl Index<usize> for SymbolTable where {
+impl Index<usize> for SymbolTable {
     type Output = String;
 
     fn index(&self, index: usize) -> &Self::Output {

@@ -1,6 +1,12 @@
 use std::collections::HashMap;
 
-use crate::{check_ptr, data::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, eval::Interpreter, gc::HeapMarked, runtime::{drop_rooted_vec, RootedVal, WeakVal}};
+use crate::{
+    check_ptr,
+    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
+    eval::Interpreter,
+    gc::HeapMarked,
+    runtime::{drop_rooted_vec, RootedVal, WeakVal},
+};
 
 mod list;
 mod load;
@@ -84,10 +90,7 @@ pub fn add_std_lib(vm: &mut Interpreter) {
     load::load_from_file(vm, "stdlib/lib.rlp".into(), false);
 }
 
-fn define_native_functions(
-    map: &mut HashMap<SymbolId, WeakVal>,
-    symbol_table: &mut SymbolTable,
-) {
+fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &mut SymbolTable) {
     use RootedVal::*;
     def_functions!(map, symbol_table, {
         // Generic functions

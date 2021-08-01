@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    data::Environment,
+    env::Environment,
     eval::{FuncFrame, ModuleState},
     runtime::{self, Lambda, RuntimeFunc, WeakVal},
 };
