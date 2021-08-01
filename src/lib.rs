@@ -6,7 +6,7 @@ pub mod runtime;
 pub mod stdlib;
 pub mod utils;
 
-pub use reader::{read, ParseError, AST};
+pub use reader::{ParseError, AST};
 
 pub struct Vm {
     interpreter: eval::Interpreter,
@@ -16,10 +16,9 @@ impl Vm {
     pub fn new(module: &str) -> Self {
         let heap = gc::Heap::with_capacity(10000);
         let gc = gc::MarkSweep::new();
-        let mut symbol_table_builder = data::SymbolTableBuilder::builtin();
-        let globals = stdlib::empty_env(&mut symbol_table_builder);
-        let symbols = symbol_table_builder.build();
-        let interpreter = eval::Interpreter::new(heap, gc, globals, None, symbols, module);
+        let mut symbol_table = data::SymbolTable::builtin();
+        let globals = stdlib::empty_env(&mut symbol_table);
+        let interpreter = eval::Interpreter::new(heap, gc, globals, None, symbol_table, module);
         let mut vm = Self { interpreter };
         stdlib::add_std_lib(&mut vm.interpreter);
         vm
@@ -47,14 +46,9 @@ impl Vm {
     where
         Func: FnOnce(&runtime::RootedVal, &gc::Heap) -> Res,
     {
-        let symbol_table_builder =
-            data::SymbolTableBuilder::with_symbols(&mut self.interpreter.symbols);
-        let AST {
-            program,
-            symbol_table_builder,
-        } = reader::load(source, &mut self.interpreter.heap, symbol_table_builder).unwrap();
-        // add newly read symbols to interpreter.symbols
-        symbol_table_builder.update_table(&mut self.interpreter.symbols);
+        let symbol_table = &mut self.interpreter.symbols;
+        let AST { program } = reader::read(source, &mut self.interpreter.heap, symbol_table)
+            .unwrap();
         let nil = runtime::RootedVal::NumberVal(0.0);
         let last_rooted = program.iter().fold(nil, |last, expr| {
             last.heap_drop(&mut self.interpreter.heap);

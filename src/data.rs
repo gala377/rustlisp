@@ -1,5 +1,5 @@
 use crate::runtime::WeakVal;
-use std::{cell::RefCell, collections::HashMap, convert::TryFrom, rc::Rc};
+use std::{borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc};
 
 pub struct EnvironmentImpl {
     pub parent: Option<Environment>,
@@ -45,7 +45,7 @@ impl Environment {
     }
 
     pub fn borrow(&self) -> std::cell::Ref<EnvironmentImpl> {
-        self.0.borrow()
+        (*self.0).borrow()
     }
 
     pub fn borrow_mut(&mut self) -> std::cell::RefMut<EnvironmentImpl> {
@@ -53,7 +53,7 @@ impl Environment {
     }
 
     pub fn into_parent(self) -> Option<Environment> {
-        self.0.borrow().parent.clone()
+        (*self.0).borrow().parent.clone()
     }
 }
 
@@ -86,8 +86,50 @@ impl EnvironmentImpl {
 /// Can be used to quickly compare symbols for identity.
 pub type SymbolId = usize;
 
-/// An associating table mapping SymbolId to its string representation.
-pub type SymbolTable = Vec<String>;
+
+
+#[derive(Clone)]
+pub struct SymbolTable {
+    str_to_id: HashMap<String, SymbolId>,
+    id_to_str: Vec<String>,
+}
+
+impl SymbolTable {
+    pub fn builtin() -> Self {
+        builtins_symbol_table()
+    }
+
+    pub fn put_symbol(&mut self, val: String) -> SymbolId {
+        match self.str_to_id.get(&val) {
+            Some(id) => *id,
+            None => {
+                self.id_to_str.push(val.clone());
+                self.str_to_id.insert(val, self.id_to_str.len() - 1);
+                self.id_to_str.len() - 1
+            }
+        }
+    }
+}
+
+impl<Q> Index<&Q> for SymbolTable
+where
+    String: Borrow<Q>,
+    Q: std::hash::Hash + Eq + ?Sized,
+{
+    type Output = SymbolId;
+
+    fn index(&self, index: &Q) -> &Self::Output {
+        self.str_to_id.get(index).unwrap()
+    }
+}
+
+impl Index<usize> for SymbolTable where {
+    type Output = String;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.id_to_str[index]
+    }
+}
 
 /// Creates symbol table with provided symbols as well as
 /// reverse mapping from string to `SymbolId`
@@ -124,7 +166,7 @@ macro_rules! build_sym_table {
             {$(
                 symbol_table.push(String::from($name));
             )*};
-            (table, symbol_table)
+            SymbolTable{str_to_id: table, id_to_str: symbol_table}
         }
     };
 }
@@ -188,7 +230,7 @@ macro_rules! generate_builtin_symbols {
             }
         }
 
-        fn builtins_symbol_table() -> (HashMap<String, SymbolId>, SymbolTable) {
+        fn builtins_symbol_table() -> SymbolTable {
             use $enum_name::*;
             build_sym_table!{
                 $(
@@ -216,50 +258,5 @@ generate_builtin_symbols! {
         ("set!": 12) => Set,
         ("macro": 13) => Macro,
         ("let": 14) => Let,
-    }
-}
-
-pub struct SymbolTableBuilder {
-    symbols: HashMap<String, SymbolId>,
-    symbol_table: SymbolTable,
-}
-
-impl SymbolTableBuilder {
-    pub fn builtin() -> Self {
-        let (symbols, symbol_table) = builtins_symbol_table();
-        Self {
-            symbols,
-            symbol_table,
-        }
-    }
-
-    pub fn with_symbols(symbols: &SymbolTable) -> Self {
-        let mut map = HashMap::new();
-        for (i, val) in symbols.iter().enumerate() {
-            map.insert(val.clone(), i);
-        }
-        Self {
-            symbols: map,
-            symbol_table: symbols.clone(),
-        }
-    }
-
-    pub fn update_table(&self, table: &mut SymbolTable) {
-        table.clone_from(&self.symbol_table);
-    }
-
-    pub fn build(self) -> SymbolTable {
-        self.symbol_table
-    }
-
-    pub fn put_symbol(&mut self, val: String) -> SymbolId {
-        match self.symbols.get(&val) {
-            Some(id) => *id,
-            None => {
-                self.symbol_table.push(val.clone());
-                self.symbols.insert(val, self.symbol_table.len() - 1);
-                self.symbol_table.len() - 1
-            }
-        }
     }
 }

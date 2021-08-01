@@ -1,12 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{
-    check_ptr,
-    data::{BuiltinSymbols, Environment, SymbolId, SymbolTableBuilder},
-    eval::Interpreter,
-    gc::HeapMarked,
-    runtime::{drop_rooted_vec, RootedVal, WeakVal},
-};
+use crate::{check_ptr, data::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, eval::Interpreter, gc::HeapMarked, runtime::{drop_rooted_vec, RootedVal, WeakVal}};
 
 mod list;
 mod load;
@@ -80,7 +74,7 @@ macro_rules! def_functions {
     };
 }
 
-pub fn empty_env(symbol_table: &mut SymbolTableBuilder) -> Environment {
+pub fn empty_env(symbol_table: &mut SymbolTable) -> Environment {
     let mut env = Environment::new();
     define_native_functions(&mut env.borrow_mut().values, symbol_table);
     env
@@ -92,7 +86,7 @@ pub fn add_std_lib(vm: &mut Interpreter) {
 
 fn define_native_functions(
     map: &mut HashMap<SymbolId, WeakVal>,
-    symbol_table: &mut SymbolTableBuilder,
+    symbol_table: &mut SymbolTable,
 ) {
     use RootedVal::*;
     def_functions!(map, symbol_table, {
