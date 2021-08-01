@@ -15,10 +15,10 @@
    2. Pattern matching
 9. More special forms (do we even have condition?)
    1. macros
+
       1. If
       2. When and so on
-   2. let
-   3. condition
+   2. condition
 10. Rest arguments in functions
 11. Key-word args?
 12. Errors

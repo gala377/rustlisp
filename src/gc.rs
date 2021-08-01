@@ -12,7 +12,6 @@ use crate::{
     runtime::{self, Lambda, RuntimeFunc, WeakVal},
 };
 
-
 #[cfg(feature = "hash_set")]
 type Set<T> = std::collections::HashSet<T>;
 
