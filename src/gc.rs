@@ -1,10 +1,4 @@
-use std::{
-    cell::UnsafeCell,
-    collections::HashMap,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    ptr,
-};
+use std::{cell::UnsafeCell, collections::HashMap, marker::PhantomData, ops::{Deref, DerefMut}, ptr::{self, NonNull}};
 
 use crate::{
     env::Environment,
@@ -13,10 +7,10 @@ use crate::{
 };
 
 #[cfg(feature = "hash_set")]
-type Set<T> = std::collections::HashSet<T>;
+pub type Set<T> = std::collections::HashSet<T>;
 
 #[cfg(not(feature = "hash_set"))]
-type Set<T> = std::collections::BTreeSet<T>;
+pub type Set<T> = std::collections::BTreeSet<T>;
 
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub enum TypeTag {
@@ -37,11 +31,11 @@ macro_rules! check_ptr {
     };
 }
 
-pub struct ScopedPtr<'guard, T> {
+pub struct ScopedPtr<'guard, T: ?Sized> {
     pub value: &'guard T,
 }
 
-impl<T> Deref for ScopedPtr<'_, T> {
+impl<T: ?Sized> Deref for ScopedPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -49,11 +43,11 @@ impl<T> Deref for ScopedPtr<'_, T> {
     }
 }
 
-pub struct ScopedMutPtr<'guard, T> {
+pub struct ScopedMutPtr<'guard, T: ?Sized> {
     pub value: &'guard mut T,
 }
 
-impl<T> Deref for ScopedMutPtr<'_, T> {
+impl<T: ?Sized> Deref for ScopedMutPtr<'_, T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
@@ -67,7 +61,7 @@ impl<T> DerefMut for ScopedMutPtr<'_, T> {
     }
 }
 
-pub trait ScopedRef<T> {
+pub trait ScopedRef<T: ?Sized> {
     fn scoped_ref<'a>(&'a self, guard: &'a dyn ScopeGuard) -> &'a T;
     fn scoped_ref_mut<'a>(&'a mut self, guard: &'a mut dyn ScopeGuard) -> &'a mut T;
 }
@@ -112,9 +106,25 @@ impl<T> PartialEq for Root<T> {
     }
 }
 
+impl<T: ?Sized> Root<T> {
+    pub unsafe fn inner_cell(&self) -> *const UnsafeCell<T> {
+        self.data.as_ref() as *const UnsafeCell<T>
+    }
+
+    pub unsafe fn cast<U>(self) -> Root<U> {
+        let new_ptr = Root {
+            data: ptr::NonNull::new_unchecked(self.data.as_ptr() as *mut UnsafeCell<U>),
+            entry_index: self.entry_index,
+            _phantom: PhantomData,
+        };
+        std::mem::forget(self);
+        new_ptr
+    }
+}
+
 impl<T> Eq for Root<T> {}
 
-impl<T> ScopedRef<T> for Root<T> {
+impl<T: ?Sized> ScopedRef<T> for Root<T> {
     fn scoped_ref<'a>(&'a self, _guard: &'a dyn ScopeGuard) -> &'a T {
         // This is safe because the only way to call this method is to pass
         // a guard that has the same borrow as this ref.
@@ -140,7 +150,7 @@ impl<T> ScopedRef<T> for Root<T> {
     }
 }
 
-impl<T> HeapMarked for Root<T> {
+impl<T: ?Sized> HeapMarked for Root<T> {
     fn entry_index(&self) -> usize {
         self.entry_index
     }
@@ -171,7 +181,7 @@ impl<T> PartialEq for Weak<T> {
 
 impl<T> Eq for Weak<T> {}
 
-impl<T> ScopedRef<T> for Weak<T> {
+impl<T: ?Sized> ScopedRef<T> for Weak<T> {
     fn scoped_ref<'a>(&'a self, _guard: &'a dyn ScopeGuard) -> &'a T {
         // TODO: Actually this is unsafe as weak does not extend references
         // lifetime so the pointer can point to freed data.
@@ -205,13 +215,13 @@ impl<T> ScopedRef<T> for Weak<T> {
     }
 }
 
-impl<T> HeapMarked for Weak<T> {
+impl<T: ?Sized> HeapMarked for Weak<T> {
     fn entry_index(&self) -> usize {
         self.entry_index
     }
 }
 
-impl<T> Clone for Weak<T> {
+impl<T: ?Sized> Clone for Weak<T> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
@@ -443,6 +453,7 @@ impl Heap {
     #[cfg(debug)]
     pub fn deref_ptr<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
     where
+        T: ?Sized,
         Ptr: ScopedRef<T> + HeapMarked,
     {
         check_ptr!(self, ptr);
@@ -452,7 +463,7 @@ impl Heap {
     }
 
     #[cfg(not(debug))]
-    pub fn deref_ptr<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
+    pub fn deref_ptr<'a, T: ?Sized>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         ScopedPtr {
             value: ptr.scoped_ref(self),
         }
@@ -461,6 +472,7 @@ impl Heap {
     #[cfg(debug)]
     pub fn deref_ptr_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
     where
+        T: ?Sized,
         Ptr: ScopedRef<T> + HeapMarked,
     {
         check_ptr!(self, ptr);
@@ -470,7 +482,7 @@ impl Heap {
     }
 
     #[cfg(not(debug))]
-    pub fn deref_ptr_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
+    pub fn deref_ptr_mut<'a, T: ?Sized>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         ScopedMutPtr {
             value: ptr.scoped_ref_mut(self),
         }
@@ -481,7 +493,7 @@ impl Heap {
         Box::into_raw(ptr)
     }
 
-    pub fn clone_root<T>(&mut self, ptr: &Root<T>) -> Root<T> {
+    pub fn clone_root<T: ?Sized>(&mut self, ptr: &Root<T>) -> Root<T> {
         self.increment_strong_count(ptr.entry_index);
         Root {
             data: ptr.data.clone(),
@@ -490,11 +502,11 @@ impl Heap {
         }
     }
 
-    pub fn clone_weak<T>(&mut self, ptr: &Weak<T>) -> Weak<T> {
+    pub fn clone_weak<T: ?Sized>(&mut self, ptr: &Weak<T>) -> Weak<T> {
         ptr.clone()
     }
 
-    pub fn downgrade<T>(&mut self, ptr: Root<T>) -> Weak<T> {
+    pub fn downgrade<T: ?Sized>(&mut self, ptr: Root<T>) -> Weak<T> {
         let weak = Weak {
             data: ptr.data.clone(),
             entry_index: ptr.entry_index,
@@ -503,7 +515,7 @@ impl Heap {
         weak
     }
 
-    pub fn upgrade<T>(&mut self, ptr: Weak<T>) -> Root<T> {
+    pub fn upgrade<T: ?Sized>(&mut self, ptr: Weak<T>) -> Root<T> {
         self.increment_strong_count(ptr.entry_index);
         Root {
             data: ptr.data,
@@ -512,7 +524,7 @@ impl Heap {
         }
     }
 
-    pub fn drop_root<T>(&mut self, ptr: Root<T>) {
+    pub fn drop_root<T: ?Sized>(&mut self, ptr: Root<T>) {
         self.decrement_strong_count(ptr.entry_index);
         std::mem::forget(ptr);
     }

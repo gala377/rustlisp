@@ -5,6 +5,7 @@ pub mod reader;
 pub mod runtime;
 pub mod stdlib;
 pub mod utils;
+pub mod native;
 
 pub use reader::{ParseError, AST};
 

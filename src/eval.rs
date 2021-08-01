@@ -537,7 +537,7 @@ impl Interpreter {
 
     #[cfg(debug)]
     #[inline]
-    fn get_ref<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
+    pub fn get_ref<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
     where
         Ptr: ScopedRef<T> + HeapMarked,
     {
@@ -546,13 +546,13 @@ impl Interpreter {
 
     #[cfg(not(debug))]
     #[inline]
-    fn get_ref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
+    pub fn get_ref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         self.heap.deref_ptr(ptr)
     }
 
     #[cfg(debug)]
     #[inline]
-    fn get_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
+    pub fn get_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
     where
         Ptr: ScopedRef<T> + HeapMarked,
     {
@@ -561,7 +561,7 @@ impl Interpreter {
 
     #[cfg(not(debug))]
     #[inline]
-    fn get_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
+    pub fn get_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         self.heap.deref_ptr_mut(ptr)
     }
 
