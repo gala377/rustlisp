@@ -161,6 +161,9 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         // numbers
         "less-than" => less_than,
 
+        // native
+        "dispatch!" => dispatch,
+
         // io
         "print" => |vm, args| {
             args.into_iter().for_each(|x| {
@@ -283,5 +286,15 @@ native_module! {
         // so we can safely drop them.
         drop_rooted_vec(&mut vm.heap, args);
         RootedVal::List(result)
+    };
+
+    typed dispatch(vm, UserType(this), StringVal(method), List(method_args)) {
+        let method_args = {
+            let weak_args: Vec<_> = vm.get_ref(method_args).iter().cloned().collect();
+            let rooted_args: Vec<_> = weak_args.into_iter().map(|x| x.upgrade(&mut vm.heap)).collect();
+            rooted_args
+        };
+        let method = vm.get_ref(method).clone();
+        this.dispatch(vm, &method, method_args)
     };
 }
