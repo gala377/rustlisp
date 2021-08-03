@@ -163,7 +163,8 @@ impl Interpreter {
             }
             _ => panic!("first symbol of a list should refer to a function"),
         };
-        if self.heap.taken_entries > self.heap.vacant_entries {
+        // If we've allocated more that 3/4th of the tracking entries
+        if self.heap.taken_entries > 3*self.heap.vacant_entries {
             self.run_gc();
         }
         res
