@@ -1,174 +1,166 @@
-use std::any::TypeId;
+use std::cell::UnsafeCell;
 
-use crate::{eval::Interpreter, gc::{Heap, Root, Set}, runtime::RootedVal};
+use crate::{eval::Interpreter, gc::{Allocable, Heap, Root, Set, TypeTag, Weak}, runtime::RootedVal};
 
+pub type DynDispatchFn = fn(Root<()>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
+pub type DynVisitFn = fn(*const (), &mut Set<usize>, &mut Heap);
+pub type DynDropFn = fn(*mut UnsafeCell<()>);
 
-
-pub type DynDispatchFn = fn(Root<NativeStructPtr>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
-pub type DynVisitFn = fn(Root<NativeStructPtr>, &mut Set<usize>, &mut Heap);
-
-pub struct NativeStructVTable {
-    pub type_id: TypeId,
+pub struct VirtualTable {
     pub dispatch: DynDispatchFn,
-    pub visit: 
+    pub visit: DynVisitFn,
+    pub drop: DynDropFn,
+}
+
+pub trait Dispatch: Sized {
+    fn dispatch(this: &mut Root<Self>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
+    fn visit(&self, _marked: &mut Set<usize>, _heap: &mut Heap) {}
 }
 
 
-pub trait NativeStruct: Sized {
-    fn dispatch(this: Root<NativeStructPtr>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
-
-    fn vtable() -> &'static NativeStructVTable;
-
-    fn visit(this: Root<NativeStructPtr>, _marked: &mut Set<usize>, _heap: &mut Heap) {
-        // blank implementation by default
-    }
-}
-
-pub trait NativeErased {
-
-    fn type_id(&self) -> TypeId;
-}
-
-#[macro_export]
-macro_rules! define_native_struct {
-    ($name:ty where vtable = $vtable:ident {
-        $dispatch:item
-     }) => {
-
-        static $vtable: NativeStructVTable = NativeStructVTable {
-            dispatch: <$name as NativeStruct>::dispatch,
-        };
-
-        impl NativeErased for $name {
-            fn type_id(&self) -> TypeId {
-                TypeId::of::<$name>()
-            }
-        }
-        impl NativeStruct for $name {
-            $dispatch
-
-            fn vtable() -> &'static NativeStructVTable {
-                & $vtable
-            }
-        }
-    };
+pub unsafe trait NativeStruct: Dispatch {
+    fn erased_dispatch(this: Root<()>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
+    fn erased_visit(this: *const (), marked: &mut Set<usize>, heap: &mut Heap);
+    fn erased_drop(this: *mut UnsafeCell<()>);
+    fn vptr() -> &'static VirtualTable;
 }
 
 #[macro_export]
-macro_rules! define_visitable_native_struct {
-    ($name:ty where vtable = $vtable:ident {
-        $dispatch:item
-        $visit:item
-     }) => {
+macro_rules! dispatchable_import_path {
+    ( [ $($import:path),* ] $name:ident ) => {
+        $(use $import;)*
+    };
+    ( $name:ident ) => { use super::super::$name; };
+}
 
-        static $vtable: NativeStructVTable = NativeStructVTable {
-            dispatch: <$name as NativeStruct>::dispatch,
+#[macro_export]
+macro_rules! register_native_type{
+    ($($name:ident $( [ $($import:path),* ] )?),+) => {
+        mod vtables {
+            $(
+                #[allow(non_snake_case)]
+                pub mod $name {
+                    use $crate::native::{VirtualTable, NativeStruct};
+                    crate::dispatchable_import_path!($( [ $($import),* ] )? $name);
+                    pub static VIRTUAL_TABLE: VirtualTable = VirtualTable {
+                        dispatch: <$name as NativeStruct>::erased_dispatch,
+                        visit: <$name as NativeStruct>::erased_visit,
+                        drop: <$name as NativeStruct>::erased_drop,
+                    };
+                }
+            )+
+        }
+ 
+        $(
+        unsafe impl $crate::native::NativeStruct for $name {
+            fn erased_dispatch(
+                this: $crate::gc::Root<()>,
+                vm: &mut $crate::eval::Interpreter,
+                method: &str,
+                args: Vec<$crate::runtime::RootedVal>
+            ) -> $crate::runtime::RootedVal {
+                let mut self_ = unsafe { this.cast::<$name>() } ;
+                let res = <$name as $crate::native::Dispatch>::dispatch(
+                    &mut self_,
+                    vm,
+                    method,
+                    args);
+                vm.heap.drop_root(self_);
+                res
+            }
+
+            fn erased_visit(
+                this: *const (),
+                marked: &mut $crate::gc::Set<usize>,
+                heap: &mut $crate::gc::Heap)
+            {
+                <$name as $crate::native::Dispatch>::visit(
+                    unsafe { &*(this as *const $name) },
+                    marked,
+                    heap,
+                );
+            }
+
+            fn erased_drop(this: *mut UnsafeCell<()>) {
+                drop(unsafe { Box::from_raw(this as *mut std::cell::UnsafeCell<$name>) });
+            }
+
+            fn vptr() -> &'static $crate::native::VirtualTable {
+                &vtables::$name::VIRTUAL_TABLE
+            }
+
         }
 
-        impl NativeErased for $name {
-            $visit
-        }
-        impl NativeStruct for $name {
-            $dispatch
-
-            fn vtable() -> NativeStructVTable {
-                & $vtable
+        impl $crate::gc::Allocable for $name {
+            fn tag() -> $crate::gc::TypeTag {
+                $crate::gc::TypeTag::UserType
             }
         }
+        )+
     };
 }
 
-
-pub fn to_self_mut<'a, T: 'static>(this: &'a mut NativeStructPtr) -> Option<&'a mut T> {
-    cast_to_self_mut(&mut this.data)
+pub struct RootedStructPtr {
+    pub data: Root<()>,
+    pub vptr: &'static VirtualTable,
 }
 
-pub fn to_self<'a, T: 'static>(this: &'a NativeStructPtr) -> Option<&'a T> {
-    cast_to_self(&this.data)
-}
-
-fn cast_to_self_mut<'a, T: 'static>(this: &'a mut Box<dyn NativeErased>) -> Option<&'a mut T> {
-    let reference: &mut dyn NativeErased = &mut **this;
-    if reference.type_id() == TypeId::of::<T>() {
-        Some(unsafe { &mut *(reference as *mut dyn NativeErased as *mut T) })
-    } else {
-        None
-    }
-}
-
-fn cast_to_self<'a, T: 'static>(this: &'a Box<dyn NativeErased>) -> Option<&'a T> {
-    let reference: &dyn NativeErased = &**this;
-    if reference.type_id() == TypeId::of::<T>() {
-        Some(unsafe { &*(reference as *const dyn NativeErased as *const T) })
-    } else {
-        None
-    }
-}
-
-pub struct NativeStructPtr {
-    pub data: Box<dyn NativeErased>,
-    pub vtable: &'static NativeStructVTable,
-}
-
-impl NativeStructPtr {
-    pub fn new<T: 'static>(val: T) -> Self
-    where
-        T: NativeErased + NativeStruct
-    {
+impl RootedStructPtr {
+    pub fn new<T: NativeStruct + Allocable>(native_struct: T, heap: &mut Heap) -> Self {
+        let data = unsafe { heap.allocate_user_type(native_struct).cast::<()>() };
         Self {
-            data: Box::new(val),
-            vtable: <T as NativeStruct>::vtable(),
+            data,
+            vptr: T::vptr(),
         }
+    }
+
+    pub fn downgrade(self, heap: &mut Heap) -> WeakStructPtr {
+        WeakStructPtr {
+            data: heap.downgrade(self.data),
+            vptr: self.vptr,
+        }
+    }
+
+    pub fn dispatch(&self, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal {
+        let self_ = vm.heap.clone_root(&self.data);
+        (self.vptr.dispatch)(self_, vm, method, args)
+    }
+
+    pub fn heap_drop(self, heap: &mut Heap) {
+        heap.drop_root(self.data)
     }
 }
 
-pub fn with_self<SelfType, Func, Res>(ptr: &Root<NativeStructPtr>, vm: &Interpreter, func: Func) -> Option<Res> 
-where
-    SelfType: 'static,
-    Func: FnOnce(&SelfType, &Interpreter) -> Res,
-{
-    let self_ref = vm.get_ref(ptr);
-    let self_: &SelfType = to_self(&*self_ref)?;
-    Some(func(self_, vm))
+
+pub struct WeakStructPtr {
+    pub data: Weak<()>,
+    pub vptr: &'static VirtualTable
 }
 
-pub fn with_self_mut<SelfType, Func, Res>(ptr: &mut Root<NativeStructPtr>, vm: &mut Interpreter, func: Func) -> Option<Res> 
-where
-    SelfType: 'static,
-    Func: FnOnce(&mut SelfType) -> Res,
-{
-    let mut self_ref = vm.get_mut(ptr);
-    let self_: &mut SelfType = to_self_mut(&mut *self_ref)?;
-    Some(func(self_))
+impl WeakStructPtr {
+    pub fn upgrade(self, heap: &mut Heap) -> RootedStructPtr {
+        RootedStructPtr {
+            data: heap.upgrade(self.data),
+            vptr: self.vptr,
+        }
+    }
+
+    pub fn dispatch(&self, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal {
+        let self_ = vm.heap.upgrade(self.data.clone());
+        (self.vptr.dispatch)(self_, vm, method, args)
+    }
 }
+
 #[cfg(test)]
 mod tests {
-
     use super::*;
-    struct Foo { a: f64, b: f64 }
-
-    define_native_struct!{
-        Foo where vtable = FOO_VTABLE {
-            fn dispatch(mut this: Root<NativeStructPtr>, vm: &mut Interpreter, method: &str, _args: Vec<RootedVal>) -> RootedVal {
-                match method {
-                    "plus" => {
-                        let res = with_self_mut(&mut this, vm, |self_: &mut Self| {
-                            self_.a += 10.0;
-                            self_.a + self_.b
-                        }).unwrap();
-                        return RootedVal::NumberVal(res);
-                    }
-                    _ => panic!("Wrong method")
-                }
-            }
+    struct Foo(usize);
+    impl Dispatch for Foo {
+        fn dispatch(this: &mut Root<Foo>, vm: &mut Interpreter, _method: &str, _args: Vec<RootedVal>) -> RootedVal {
+            let val = vm.get_ref(this).0;
+            RootedVal::NumberVal(val as f64)
         }
     }
 
-    #[test]
-    fn native_struct_pointer_can_be_created() {
-        let foo = Foo{a: 1.0, b: 2.0};
-        let _ptr = NativeStructPtr::new(foo);
-    }
-
-
+    crate::register_native_type!(Foo);
 }

@@ -1,6 +1,6 @@
 use std::{cell::UnsafeCell, collections::HashMap, marker::PhantomData, ops::{Deref, DerefMut}, ptr};
 
-use crate::{env::Environment, eval::{FuncFrame, ModuleState}, native::NativeStructPointer, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
+use crate::{env::Environment, eval::{FuncFrame, ModuleState}, native::{NativeStruct, VirtualTable}, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
 
 #[cfg(feature = "hash_set")]
 pub type Set<T> = std::collections::HashSet<T>;
@@ -14,7 +14,7 @@ pub enum TypeTag {
     List,
     String,
     RuntimeFunc,
-    NativeStructPtr,
+    UserType,
     None,
 }
 
@@ -231,7 +231,6 @@ pub trait Allocable {
     fn tag() -> TypeTag;
 }
 
-#[derive(PartialEq, Eq, Clone, Debug)]
 pub struct Header {
     pub size: usize,
     pub tag: TypeTag,
@@ -240,6 +239,7 @@ pub struct Header {
     pub strong_count: usize,
     pub weak_count: usize,
     pub dropped: bool,
+    pub vptr: Option<&'static VirtualTable>,
 }
 
 impl Header {
@@ -252,6 +252,7 @@ impl Header {
             strong_count: 0,
             weak_count: 0,
             dropped: false,
+            vptr: None,
         }
     }
     pub fn with_next(next: Option<usize>) -> Self {
@@ -263,6 +264,7 @@ impl Header {
             strong_count: 0,
             weak_count: 0,
             dropped: false,
+            vptr: None,
         }
     }
 }
@@ -297,8 +299,11 @@ impl HeapEntry {
                     // println!("Dropping string");
                     safe_drop_and_free::<String>(ptr.as_ptr());
                 }
-                TypeTag::NativeStructPtr => {
-                    safe_drop_and_free::<NativeStructPointer>(ptr.as_ptr());
+                TypeTag::UserType => {
+                    match self.header.vptr {
+                        None => unreachable!("User type should always have drop function implemented"),
+                        Some(vptr) => (vptr.drop)(ptr.as_ptr()),
+                    }
                 }
                 TypeTag::None => (),
             },
@@ -378,8 +383,10 @@ impl Heap {
             vacant_entries: capacity,
         }
     }
-
-    pub fn allocate<T: Allocable>(&mut self, val: T) -> Root<T> {
+    pub fn allocate_user_type<T: Allocable + NativeStruct>(&mut self, val: T) -> Root<T> {
+        if let TypeTag::UserType = T::tag() {
+            panic!("Use allocate_user_type for user defined types");
+        }
         let data = Self::heap_allocate(val);
         let header = Header {
             marked: false,
@@ -389,6 +396,35 @@ impl Heap {
             strong_count: 1,
             weak_count: 0,
             dropped: false,
+            vptr: Some(T::vptr()),
+        };
+        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut UnsafeCell<()>) };
+        let entry = HeapEntry {
+            data: Some(ptr.clone()),
+            header,
+        };
+        let entry_index = self.insert_entry(entry);
+        Root {
+            data: unsafe { ptr::NonNull::new_unchecked(data) },
+            entry_index,
+            _phantom: PhantomData,
+        }
+    }
+
+    pub fn allocate<T: Allocable>(&mut self, val: T) -> Root<T> {
+        if let TypeTag::UserType = T::tag() {
+            panic!("Use allocate_user_type for user defined types");
+        }
+        let data = Self::heap_allocate(val);
+        let header = Header {
+            marked: false,
+            size: std::mem::size_of::<T>(),
+            tag: T::tag(),
+            next_node: self.first_taken,
+            strong_count: 1,
+            weak_count: 0,
+            dropped: false,
+            vptr: None,
         };
         let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut UnsafeCell<()>) };
         let entry = HeapEntry {
@@ -677,7 +713,7 @@ impl MarkSweep {
             TypeTag::List => Self::visit_list,
             TypeTag::Lambda => Self::visit_lambda,
             TypeTag::RuntimeFunc => Self::visit_func,
-            TypeTag::NativeStructPtr => Self::visit_native_struct,
+            TypeTag::UserType => Self::visit_user_type,
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
             TypeTag::None | TypeTag::String => {
@@ -712,10 +748,10 @@ impl MarkSweep {
     }
 
 
-    fn visit_native_struct(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
-        let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const NativeStructPointer;
-        let pointer_ref = unsafe { pointer_ref.as_ref().unwrap() };
-        pointer_ref.data.visit(marked, heap);
+    fn visit_user_type(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
+        let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const ();
+        let visit_fn = heap.entries[entry_index].header.vptr.unwrap().visit;
+        visit_fn(pointer_ref, marked, heap);
     }
 
 
