@@ -83,7 +83,7 @@ macro_rules! register_native_type{
                 );
             }
 
-            fn erased_drop(this: *mut UnsafeCell<()>) {
+            fn erased_drop(this: *mut std::cell::UnsafeCell<()>) {
                 drop(unsafe { Box::from_raw(this as *mut std::cell::UnsafeCell<$name>) });
             }
 

@@ -10,6 +10,7 @@ use crate::{
 
 mod list;
 mod load;
+mod native;
 
 #[macro_export]
 macro_rules! native_untyped_fn {
@@ -36,7 +37,7 @@ macro_rules! native_typed_fn {
                 }
                 _ => panic!("{} wrong arguments in call", stringify!($name))
             };
-            drop_rooted_vec(&mut $vm.heap, args);
+            $crate::runtime::drop_rooted_vec(&mut $vm.heap, args);
             res
         }
     };
@@ -163,6 +164,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
 
         // native
         "dispatch!" => dispatch,
+        "experiment-counter" => native::new_counter,
 
         // io
         "print" => |vm, args| {

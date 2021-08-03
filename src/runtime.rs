@@ -1,4 +1,4 @@
-use crate::{check_ptr, env::BuiltinSymbols, env::{Environment, SymbolId, SymbolTable}, eval::Interpreter, gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag}, native::{RootedStructPtr, WeakStructPtr}};
+use crate::{check_ptr, env::BuiltinSymbols, env::{Environment, SymbolId, SymbolTable}, eval::Interpreter, gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag}, native::{NativeStruct, RootedStructPtr, WeakStructPtr}};
 use std::rc::Rc;
 
 pub struct Lambda {
@@ -184,6 +184,11 @@ impl RootedVal {
     pub fn string(val: std::string::String, heap: &mut Heap) -> RootedVal {
         let inner = heap.allocate(val);
         Self::StringVal(inner)
+    }
+
+    pub fn user_type<T: NativeStruct + Allocable>(val: T, heap: &mut Heap) -> RootedVal {
+        let ptr = RootedStructPtr::new(val, heap);
+        RootedVal::UserType(ptr)
     }
 
     pub fn list(val: Vec<WeakVal>, heap: &mut Heap) -> RootedVal {
