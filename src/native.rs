@@ -4,24 +4,27 @@ use crate::{eval::Interpreter, gc::{Heap, Root, Set}, runtime::RootedVal};
 
 
 
-pub type DynDispatchFn = fn(Root<NativeStructPointer>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
-
+pub type DynDispatchFn = fn(Root<NativeStructPtr>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
+pub type DynVisitFn = fn(Root<NativeStructPtr>, &mut Set<usize>, &mut Heap);
 
 pub struct NativeStructVTable {
+    pub type_id: TypeId,
     pub dispatch: DynDispatchFn,
+    pub visit: 
 }
 
 
 pub trait NativeStruct: Sized {
-    fn dispatch(this: Root<NativeStructPointer>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
+    fn dispatch(this: Root<NativeStructPtr>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
 
     fn vtable() -> &'static NativeStructVTable;
+
+    fn visit(this: Root<NativeStructPtr>, _marked: &mut Set<usize>, _heap: &mut Heap) {
+        // blank implementation by default
+    }
 }
 
 pub trait NativeErased {
-    fn visit(&self, _marked: &mut Set<usize>, _heap: &mut Heap) {
-        // blank implementation by default
-    }
 
     fn type_id(&self) -> TypeId;
 }
@@ -76,11 +79,11 @@ macro_rules! define_visitable_native_struct {
 }
 
 
-pub fn to_self_mut<'a, T: 'static>(this: &'a mut NativeStructPointer) -> Option<&'a mut T> {
+pub fn to_self_mut<'a, T: 'static>(this: &'a mut NativeStructPtr) -> Option<&'a mut T> {
     cast_to_self_mut(&mut this.data)
 }
 
-pub fn to_self<'a, T: 'static>(this: &'a NativeStructPointer) -> Option<&'a T> {
+pub fn to_self<'a, T: 'static>(this: &'a NativeStructPtr) -> Option<&'a T> {
     cast_to_self(&this.data)
 }
 
@@ -102,12 +105,12 @@ fn cast_to_self<'a, T: 'static>(this: &'a Box<dyn NativeErased>) -> Option<&'a T
     }
 }
 
-pub struct NativeStructPointer {
+pub struct NativeStructPtr {
     pub data: Box<dyn NativeErased>,
     pub vtable: &'static NativeStructVTable,
 }
 
-impl NativeStructPointer {
+impl NativeStructPtr {
     pub fn new<T: 'static>(val: T) -> Self
     where
         T: NativeErased + NativeStruct
@@ -119,7 +122,7 @@ impl NativeStructPointer {
     }
 }
 
-pub fn with_self<SelfType, Func, Res>(ptr: &Root<NativeStructPointer>, vm: &Interpreter, func: Func) -> Option<Res> 
+pub fn with_self<SelfType, Func, Res>(ptr: &Root<NativeStructPtr>, vm: &Interpreter, func: Func) -> Option<Res> 
 where
     SelfType: 'static,
     Func: FnOnce(&SelfType, &Interpreter) -> Res,
@@ -129,7 +132,7 @@ where
     Some(func(self_, vm))
 }
 
-pub fn with_self_mut<SelfType, Func, Res>(ptr: &mut Root<NativeStructPointer>, vm: &mut Interpreter, func: Func) -> Option<Res> 
+pub fn with_self_mut<SelfType, Func, Res>(ptr: &mut Root<NativeStructPtr>, vm: &mut Interpreter, func: Func) -> Option<Res> 
 where
     SelfType: 'static,
     Func: FnOnce(&mut SelfType) -> Res,
@@ -146,7 +149,7 @@ mod tests {
 
     define_native_struct!{
         Foo where vtable = FOO_VTABLE {
-            fn dispatch(mut this: Root<NativeStructPointer>, vm: &mut Interpreter, method: &str, _args: Vec<RootedVal>) -> RootedVal {
+            fn dispatch(mut this: Root<NativeStructPtr>, vm: &mut Interpreter, method: &str, _args: Vec<RootedVal>) -> RootedVal {
                 match method {
                     "plus" => {
                         let res = with_self_mut(&mut this, vm, |self_: &mut Self| {
@@ -164,7 +167,7 @@ mod tests {
     #[test]
     fn native_struct_pointer_can_be_created() {
         let foo = Foo{a: 1.0, b: 2.0};
-        let _ptr = NativeStructPointer::new(foo);
+        let _ptr = NativeStructPtr::new(foo);
     }
 
 
