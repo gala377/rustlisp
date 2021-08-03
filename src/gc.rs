@@ -384,37 +384,18 @@ impl Heap {
         }
     }
     pub fn allocate_user_type<T: Allocable + NativeStruct>(&mut self, val: T) -> Root<T> {
-        if let TypeTag::UserType = T::tag() {
-            panic!("Use allocate_user_type for user defined types");
-        }
-        let data = Self::heap_allocate(val);
-        let header = Header {
-            marked: false,
-            size: std::mem::size_of::<T>(),
-            tag: T::tag(),
-            next_node: self.first_taken,
-            strong_count: 1,
-            weak_count: 0,
-            dropped: false,
-            vptr: Some(T::vptr()),
-        };
-        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut UnsafeCell<()>) };
-        let entry = HeapEntry {
-            data: Some(ptr.clone()),
-            header,
-        };
-        let entry_index = self.insert_entry(entry);
-        Root {
-            data: unsafe { ptr::NonNull::new_unchecked(data) },
-            entry_index,
-            _phantom: PhantomData,
-        }
+        self._allocate(val, Some(T::vptr()))
     }
+
 
     pub fn allocate<T: Allocable>(&mut self, val: T) -> Root<T> {
         if let TypeTag::UserType = T::tag() {
             panic!("Use allocate_user_type for user defined types");
         }
+        self._allocate(val, None)
+    }
+
+    fn _allocate<T: Allocable>(&mut self, val: T, vptr: Option<&'static VirtualTable>) -> Root<T> {
         let data = Self::heap_allocate(val);
         let header = Header {
             marked: false,
@@ -424,7 +405,7 @@ impl Heap {
             strong_count: 1,
             weak_count: 0,
             dropped: false,
-            vptr: None,
+            vptr,
         };
         let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut UnsafeCell<()>) };
         let entry = HeapEntry {
@@ -438,7 +419,6 @@ impl Heap {
             _phantom: PhantomData,
         }
     }
-
     fn insert_entry(&mut self, entry: HeapEntry) -> usize {
         match self.first_vacant {
             None => {
