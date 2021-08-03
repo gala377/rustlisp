@@ -163,7 +163,9 @@ impl Interpreter {
             }
             _ => panic!("first symbol of a list should refer to a function"),
         };
-        self.run_gc();
+        if self.heap.taken_entries > self.heap.vacant_entries {
+            self.run_gc();
+        }
         res
     }
 
