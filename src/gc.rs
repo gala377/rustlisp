@@ -751,7 +751,7 @@ impl MarkSweep {
     fn visit_user_type(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
         let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const ();
         let visit_fn = heap.entries[entry_index].header.vptr.unwrap().visit;
-        visit_fn(pointer_ref, marked, heap);
+        visit_fn(pointer_ref, self, marked, heap);
     }
 
 
@@ -776,6 +776,7 @@ impl MarkSweep {
             Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
             List(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
             StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
+            UserType(ptr) => self.visit_entry(marked, heap, ptr.data.entry_index),
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
             NumberVal(_) | Symbol(_) | NativeFunc(_) => (),

@@ -1,10 +1,4 @@
-use crate::{
-    check_ptr,
-    env::BuiltinSymbols,
-    env::{Environment, SymbolId, SymbolTable},
-    eval::Interpreter,
-    gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag},
-};
+use crate::{check_ptr, env::BuiltinSymbols, env::{Environment, SymbolId, SymbolTable}, eval::Interpreter, gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag}, native::{RootedStructPtr, WeakStructPtr}};
 use std::rc::Rc;
 
 pub struct Lambda {
@@ -88,7 +82,6 @@ pub enum RootedVal {
     NumberVal(f64),
     StringVal(Root<std::string::String>),
     Symbol(SymbolId),
-    List(Root<Vec<WeakVal>>),
 
     // Reference immutable types
     Func(Root<RuntimeFunc>),
@@ -96,6 +89,8 @@ pub enum RootedVal {
 
     // Mutable reference types
     Lambda(Root<Lambda>),
+    List(Root<Vec<WeakVal>>),
+    UserType(RootedStructPtr),
 }
 
 impl RootedVal {
@@ -106,6 +101,7 @@ impl RootedVal {
             List(x) => heap.drop_root(x),
             Func(x) => heap.drop_root(x),
             Lambda(x) => heap.drop_root(x),
+            UserType(x) => x.heap_drop(heap),
             NumberVal(_) | Symbol(_) | NativeFunc(_) => (),
         }
     }
@@ -119,6 +115,7 @@ impl RootedVal {
             List(x) => WeakVal::List(heap.downgrade(x)),
             Func(x) => WeakVal::Func(heap.downgrade(x)),
             NativeFunc(x) => WeakVal::NativeFunc(x),
+            UserType(x) => WeakVal::UserType(x.downgrade(heap)),
             Lambda(x) => WeakVal::Lambda(heap.downgrade(x)),
         }
     }
@@ -133,6 +130,7 @@ impl RootedVal {
             NumberVal(x) => NumberVal(*x),
             Symbol(x) => Symbol(*x),
             NativeFunc(x) => NativeFunc(Rc::clone(x)),
+            UserType(x) => UserType(x.clone(heap)),
         }
     }
 
@@ -229,6 +227,7 @@ impl RootedVal {
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
+            _ => "No representation".into(),
         }
     }
 
@@ -267,6 +266,7 @@ pub enum WeakVal {
     Func(gc::Weak<RuntimeFunc>),
     NativeFunc(NativeFunc),
     Lambda(gc::Weak<Lambda>),
+    UserType(WeakStructPtr),
 }
 
 impl WeakVal {
@@ -280,6 +280,7 @@ impl WeakVal {
             Func(x) => RootedVal::Func(heap.upgrade(x)),
             NativeFunc(x) => RootedVal::NativeFunc(x),
             Lambda(x) => RootedVal::Lambda(heap.upgrade(x)),
+            UserType(x) => RootedVal::UserType(x.upgrade(heap)),
         }
     }
 
@@ -318,6 +319,7 @@ impl WeakVal {
                 format!("Function {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
+            UserType(_) => "Not supported".into(),
         }
     }
 
@@ -334,6 +336,7 @@ impl WeakVal {
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),
+            _ => "Not supported".into(),
         }
     }
 
@@ -358,6 +361,7 @@ impl WeakVal {
                 format!("Runtime function {}", name)
             }
             Lambda(_) => "Lambda function".to_owned(),
+            _ => "Not supported".into(),
         }
     }
 }

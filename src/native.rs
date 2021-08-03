@@ -1,9 +1,9 @@
 use std::cell::UnsafeCell;
 
-use crate::{eval::Interpreter, gc::{Allocable, Heap, Root, Set, TypeTag, Weak}, runtime::RootedVal};
+use crate::{eval::Interpreter, gc::{self, Allocable, Heap, Root, Set, Weak}, runtime::RootedVal};
 
 pub type DynDispatchFn = fn(Root<()>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
-pub type DynVisitFn = fn(*const (), &mut Set<usize>, &mut Heap);
+pub type DynVisitFn = fn(*const (), &gc::MarkSweep, &mut Set<usize>, &mut Heap);
 pub type DynDropFn = fn(*mut UnsafeCell<()>);
 
 pub struct VirtualTable {
@@ -14,13 +14,13 @@ pub struct VirtualTable {
 
 pub trait Dispatch: Sized {
     fn dispatch(this: &mut Root<Self>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
-    fn visit(&self, _marked: &mut Set<usize>, _heap: &mut Heap) {}
+    fn visit(&self, _gc: &gc::MarkSweep, _marked: &mut Set<usize>, _heap: &mut Heap) {}
 }
 
 
 pub unsafe trait NativeStruct: Dispatch {
     fn erased_dispatch(this: Root<()>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
-    fn erased_visit(this: *const (), marked: &mut Set<usize>, heap: &mut Heap);
+    fn erased_visit(this: *const (), gc: &gc::MarkSweep, marked: &mut Set<usize>, heap: &mut Heap);
     fn erased_drop(this: *mut UnsafeCell<()>);
     fn vptr() -> &'static VirtualTable;
 }
@@ -50,7 +50,7 @@ macro_rules! register_native_type{
                 }
             )+
         }
- 
+
         $(
         unsafe impl $crate::native::NativeStruct for $name {
             fn erased_dispatch(
@@ -71,11 +71,13 @@ macro_rules! register_native_type{
 
             fn erased_visit(
                 this: *const (),
+                gc: & $crate::gc::MarkSweep,
                 marked: &mut $crate::gc::Set<usize>,
                 heap: &mut $crate::gc::Heap)
             {
                 <$name as $crate::native::Dispatch>::visit(
                     unsafe { &*(this as *const $name) },
+                    gc,
                     marked,
                     heap,
                 );
@@ -129,9 +131,16 @@ impl RootedStructPtr {
     pub fn heap_drop(self, heap: &mut Heap) {
         heap.drop_root(self.data)
     }
+
+    pub fn clone(&self, heap: &mut Heap) -> Self {
+        Self {
+            data: heap.clone_root(&self.data),
+            vptr: self.vptr,
+        }
+    }
 }
 
-
+#[derive(Clone)]
 pub struct WeakStructPtr {
     pub data: Weak<()>,
     pub vptr: &'static VirtualTable
