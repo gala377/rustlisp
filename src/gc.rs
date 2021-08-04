@@ -1,6 +1,17 @@
-use std::{cell::{Cell, UnsafeCell}, collections::{HashMap}, marker::PhantomData, ops::{Deref, DerefMut}, ptr::{self, NonNull}};
+use std::{
+    cell::{Cell, UnsafeCell},
+    collections::HashMap,
+    marker::PhantomData,
+    ops::{Deref, DerefMut},
+    ptr,
+};
 
-use crate::{env::Environment, eval::{FuncFrame, ModuleState}, native::{NativeStruct, VirtualTable}, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
+use crate::{
+    env::Environment,
+    eval::{FuncFrame, ModuleState},
+    native::{NativeStruct, VirtualTable},
+    runtime::{self, Lambda, RuntimeFunc, WeakVal},
+};
 
 #[cfg(feature = "hash_set")]
 pub type Set<T> = std::collections::HashSet<T>;
@@ -260,7 +271,6 @@ impl Header {
             vptr: None,
         }
     }
-
 }
 
 pub struct HeapEntry {
@@ -289,12 +299,10 @@ impl HeapEntry {
                 TypeTag::String => {
                     safe_drop_and_free::<String>(ptr.as_ptr());
                 }
-                TypeTag::UserType => {
-                    match self.header.vptr {
-                        None => unreachable!("User type should always have drop function implemented"),
-                        Some(vptr) => (vptr.drop)(ptr.as_ptr()),
-                    }
-                }
+                TypeTag::UserType => match self.header.vptr {
+                    None => unreachable!("User type should always have drop function implemented"),
+                    Some(vptr) => (vptr.drop)(ptr.as_ptr()),
+                },
                 TypeTag::None => (),
             },
         }
@@ -312,7 +320,10 @@ impl HeapEntry {
     }
 
     pub unsafe fn data_ref<T>(&self) -> &T {
-        debug_assert!(!self.header.dropped, "Cannot take reference to dropped data");
+        debug_assert!(
+            !self.header.dropped,
+            "Cannot take reference to dropped data"
+        );
         let ptr = &self.data.expect("Dereferencing free entry");
         let ptr = ptr.as_ptr() as *const RawPtrBox<T>;
         &*(*ptr).value.get()
@@ -384,7 +395,6 @@ impl Heap {
         self._allocate(val, Some(T::vptr()))
     }
 
-
     pub fn allocate<T: Allocable>(&mut self, val: T) -> Root<T> {
         if let TypeTag::UserType = T::tag() {
             panic!("Use allocate_user_type for user defined types");
@@ -403,10 +413,7 @@ impl Heap {
             dropped: false,
             vptr,
         };
-        let entry = HeapEntry {
-            data: None,
-            header,
-        };
+        let entry = HeapEntry { data: None, header };
         let entry_index = self.insert_entry(entry);
         let data = Self::heap_allocate(val, entry_index);
 
@@ -452,7 +459,8 @@ impl Heap {
             self.entries.push(HeapEntry { data: None, header });
         }
         self.first_vacant = Some(self.entries.len() - 1);
-        self.vacant_entries.set(self.entries.len() - self.taken_entries.get());
+        self.vacant_entries
+            .set(self.entries.len() - self.taken_entries.get());
     }
 
     pub fn mutate<T, R, Func, Ptr>(&mut self, ptr: &mut Ptr, func: Func) -> R
@@ -496,14 +504,17 @@ impl Heap {
     }
 
     #[cfg(not(debug))]
-    pub fn deref_ptr_mut<'a, T: ?Sized>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
+    pub fn deref_ptr_mut<'a, T: ?Sized>(
+        &'a mut self,
+        ptr: &'a mut impl ScopedRef<T>,
+    ) -> ScopedMutPtr<T> {
         ScopedMutPtr {
             value: ptr.scoped_ref_mut(self),
         }
     }
 
     fn heap_allocate<T>(val: T, entry_index: usize) -> *mut RawPtrBox<T> {
-        let ptr = Box::new(RawPtrBox{
+        let ptr = Box::new(RawPtrBox {
             entry_index,
             value: UnsafeCell::new(val),
         });
@@ -551,7 +562,6 @@ impl Heap {
 
         entry.drop_data();
         entry.header.dropped = true;
-
 
         self.taken_entries.set(self.taken_entries.get() - 1);
         self.vacant_entries.set(self.vacant_entries.get() + 1);
@@ -640,12 +650,7 @@ impl MarkSweep {
         heap.vacant_entries.set(heap.entries.len() - marked.len());
     }
 
-    fn visit_call_stack(
-        &self,
-        marked: &mut Set<usize>,
-        heap: &Heap,
-        call_stack: &Vec<FuncFrame>,
-    ) {
+    fn visit_call_stack(&self, marked: &mut Set<usize>, heap: &Heap, call_stack: &Vec<FuncFrame>) {
         for frame in call_stack {
             self.visit_env(marked, heap, frame.globals.clone());
             if let Some(locals) = frame.locals.clone() {
@@ -721,13 +726,11 @@ impl MarkSweep {
         self.visit_weak_val(marked, heap, &lambda_ref.body);
     }
 
-
     fn visit_user_type(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
         let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const RawPtrBox<()>;
         let visit_fn = heap.entries[entry_index].header.vptr.unwrap().visit;
-        visit_fn(pointer_ref , self, marked, heap);
+        visit_fn(pointer_ref, self, marked, heap);
     }
-
 
     fn visit_env(&self, marked: &mut Set<usize>, heap: &Heap, env: Environment) {
         let parent;
@@ -915,7 +918,13 @@ mod tests {
     fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
         let mut heap = Heap::with_capacity(10);
         let mut ptr1 = heap.allocate(Vec::new());
-        unsafe { ptr1.ptr.as_mut().value.get_mut().push(WeakVal::NumberVal(2.0)) }
+        unsafe {
+            ptr1.ptr
+                .as_mut()
+                .value
+                .get_mut()
+                .push(WeakVal::NumberVal(2.0))
+        }
         let data_ref = *(&heap.entries[ptr1.entry_index()]
             .data
             .as_ref()
@@ -976,7 +985,13 @@ mod tests {
         let mut heap = Heap::with_capacity(1);
         let mut ptr = heap.allocate(Vec::new());
         let ptr2 = heap.allocate(String::new());
-        unsafe { ptr.ptr.as_mut().value.get_mut().push(WeakVal::NumberVal(10.0)) };
+        unsafe {
+            ptr.ptr
+                .as_mut()
+                .value
+                .get_mut()
+                .push(WeakVal::NumberVal(10.0))
+        };
         let data_ref = *(&heap.entries[ptr.entry_index()]
             .data
             .as_ref()

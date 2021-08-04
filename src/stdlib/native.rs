@@ -1,12 +1,14 @@
 use crate::{native::Dispatch, native_module, register_native_type, runtime::RootedVal};
 
-
-
-
 struct Int(i64);
 
 impl Dispatch for Int {
-    fn dispatch(this: &mut crate::gc::Root<Self>, vm: &mut crate::eval::Interpreter, method: &str, args: Vec<crate::runtime::RootedVal>) -> crate::runtime::RootedVal {
+    fn dispatch(
+        this: &mut crate::gc::Root<Self>,
+        vm: &mut crate::eval::Interpreter,
+        method: &str,
+        args: Vec<crate::runtime::RootedVal>,
+    ) -> crate::runtime::RootedVal {
         assert_eq!(args.len(), 0, "Args for int take no arguments");
         match method {
             "inc" => vm.get_mut(this).0 += 1,

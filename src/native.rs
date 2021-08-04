@@ -1,4 +1,8 @@
-use crate::{eval::Interpreter, gc::{self, Allocable, Heap, Root, Set, Weak}, runtime::RootedVal};
+use crate::{
+    eval::Interpreter,
+    gc::{self, Allocable, Heap, Root, Set, Weak},
+    runtime::RootedVal,
+};
 
 pub type DynDispatchFn = fn(Root<()>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
 pub type DynVisitFn = fn(*const gc::RawPtrBox<()>, &gc::MarkSweep, &mut Set<usize>, &Heap);
@@ -11,14 +15,28 @@ pub struct VirtualTable {
 }
 
 pub trait Dispatch: Sized {
-    fn dispatch(this: &mut Root<Self>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
+    fn dispatch(
+        this: &mut Root<Self>,
+        vm: &mut Interpreter,
+        method: &str,
+        args: Vec<RootedVal>,
+    ) -> RootedVal;
     fn visit(&self, _gc: &gc::MarkSweep, _marked: &mut Set<usize>, _heap: &Heap) {}
 }
 
-
 pub unsafe trait NativeStruct: Dispatch {
-    fn erased_dispatch(this: Root<()>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
-    fn erased_visit(this: *const gc::RawPtrBox<()>, gc: &gc::MarkSweep, marked: &mut Set<usize>, heap: &Heap);
+    fn erased_dispatch(
+        this: Root<()>,
+        vm: &mut Interpreter,
+        method: &str,
+        args: Vec<RootedVal>,
+    ) -> RootedVal;
+    fn erased_visit(
+        this: *const gc::RawPtrBox<()>,
+        gc: &gc::MarkSweep,
+        marked: &mut Set<usize>,
+        heap: &Heap,
+    );
     fn erased_drop(this: *mut gc::RawPtrBox<()>);
     fn vptr() -> &'static VirtualTable;
 }
@@ -145,7 +163,7 @@ impl RootedStructPtr {
 #[derive(Clone)]
 pub struct WeakStructPtr {
     pub data: Weak<()>,
-    pub vptr: &'static VirtualTable
+    pub vptr: &'static VirtualTable,
 }
 
 impl WeakStructPtr {
@@ -167,7 +185,12 @@ mod tests {
     use super::*;
     struct Foo(usize);
     impl Dispatch for Foo {
-        fn dispatch(this: &mut Root<Foo>, vm: &mut Interpreter, _method: &str, _args: Vec<RootedVal>) -> RootedVal {
+        fn dispatch(
+            this: &mut Root<Foo>,
+            vm: &mut Interpreter,
+            _method: &str,
+            _args: Vec<RootedVal>,
+        ) -> RootedVal {
             let val = vm.get_ref(this).0;
             RootedVal::NumberVal(val as f64)
         }

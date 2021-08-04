@@ -1,4 +1,11 @@
-use crate::{check_ptr, env::BuiltinSymbols, env::{Environment, SymbolId, SymbolTable}, eval::Interpreter, gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag}, native::{NativeStruct, RootedStructPtr, WeakStructPtr}};
+use crate::{
+    check_ptr,
+    env::BuiltinSymbols,
+    env::{Environment, SymbolId, SymbolTable},
+    eval::Interpreter,
+    gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag},
+    native::{NativeStruct, RootedStructPtr, WeakStructPtr},
+};
 use std::rc::Rc;
 
 pub struct Lambda {
