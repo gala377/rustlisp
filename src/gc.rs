@@ -1,4 +1,4 @@
-use std::{cell::UnsafeCell, collections::HashMap, marker::PhantomData, ops::{Deref, DerefMut}, ptr};
+use std::{cell::{Cell, UnsafeCell}, collections::{HashMap}, marker::PhantomData, ops::{Deref, DerefMut}, ptr::{self, NonNull}};
 
 use crate::{env::Environment, eval::{FuncFrame, ModuleState}, native::{NativeStruct, VirtualTable}, runtime::{self, Lambda, RuntimeFunc, WeakVal}};
 
@@ -84,34 +84,35 @@ pub trait HeapMarked {
 /// undefined behavior.
 pub unsafe trait ScopeGuard {}
 
-pub struct Root<T: ?Sized> {
-    // TODO: Documentation for `NonNull` states that if you created `NonNull`
-    // pointer by using `Into` or `From` traits on shared reference &T then
-    // mutations on the T using this pointer are UB unless they happen inside
-    // `UnsafeCell`. The pointer here is not obtained through shared reference
-    // but through `Box::into_raw(Box::new(T))` so maybe we don't need an
-    // `UnsafeCell` here. We should check that.
-    data: ptr::NonNull<UnsafeCell<T>>,
+pub struct RawPtrBox<T: ?Sized> {
     pub entry_index: usize,
+    pub value: UnsafeCell<T>,
+}
 
+pub struct Root<T: ?Sized> {
+    ptr: ptr::NonNull<RawPtrBox<T>>,
     _phantom: PhantomData<T>,
 }
 
 impl<T> PartialEq for Root<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
+        self.ptr == other.ptr
     }
 }
 
-impl<T: ?Sized> Root<T> {
+impl<T> Root<T> {
     pub unsafe fn inner_cell(&self) -> *const UnsafeCell<T> {
-        self.data.as_ref() as *const UnsafeCell<T>
+        &self.ptr.as_ref().value as *const UnsafeCell<T>
     }
 
+    /// Casts `Root` between types.
+    ///
+    /// User needs to make sure that the pointer data after
+    /// type cast is properly aligned.
+    /// If that is not uphold then dereferencing the pointer is UB.
     pub unsafe fn cast<U>(self) -> Root<U> {
         let new_ptr = Root {
-            data: ptr::NonNull::new_unchecked(self.data.as_ptr() as *mut UnsafeCell<U>),
-            entry_index: self.entry_index,
+            ptr: self.ptr.cast::<RawPtrBox<U>>(),
             _phantom: PhantomData,
         };
         std::mem::forget(self);
@@ -131,7 +132,7 @@ impl<T: ?Sized> ScopedRef<T> for Root<T> {
         // mutator's execution.
         // If the user implements ScopeGuard themselves it's their responsibility
         // to ensure that the rust invariants will be upheld.
-        unsafe { &*self.data.as_ref().get() }
+        unsafe { &*self.ptr.as_ref().value.get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
@@ -143,13 +144,13 @@ impl<T: ?Sized> ScopedRef<T> for Root<T> {
         // mutator's execution.
         // If the user implements ScopeGuard themselves it's their responsibility
         // to ensure that the rust invariants will be upheld.
-        unsafe { &mut *self.data.as_ref().get() }
+        unsafe { &mut *self.ptr.as_ref().value.get() }
     }
 }
 
 impl<T: ?Sized> HeapMarked for Root<T> {
     fn entry_index(&self) -> usize {
-        self.entry_index
+        unsafe { self.ptr.as_ref().entry_index }
     }
 }
 
@@ -160,14 +161,7 @@ impl<T: ?Sized> Drop for Root<T> {
 }
 
 pub struct Weak<T: ?Sized> {
-    // TODO: Documentation for `NonNull` states that if you created `NonNull`
-    // pointer by using `Into` or `From` traits on shared reference &T then
-    // mutations on the T using this pointer are UB unless they happen inside
-    // `UnsafeCell`. The pointer here is not obtained through shared reference
-    // but through `Box::into_raw(Box::new(T))` so maybe we don't need an
-    // `UnsafeCell` here. We should check that.
-    data: ptr::NonNull<UnsafeCell<T>>,
-    entry_index: usize,
+    data: ptr::NonNull<RawPtrBox<T>>,
 }
 
 impl<T> PartialEq for Weak<T> {
@@ -192,7 +186,7 @@ impl<T: ?Sized> ScopedRef<T> for Weak<T> {
         //
         // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
         // tracked containers.
-        unsafe { &*self.data.as_ref().get() }
+        unsafe { &*self.data.as_ref().value.get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
@@ -208,13 +202,13 @@ impl<T: ?Sized> ScopedRef<T> for Weak<T> {
         //
         // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
         // tracked containers.
-        unsafe { &mut *self.data.as_ref().get() }
+        unsafe { &mut *self.data.as_ref().value.get() }
     }
 }
 
 impl<T: ?Sized> HeapMarked for Weak<T> {
     fn entry_index(&self) -> usize {
-        self.entry_index
+        unsafe { self.data.as_ref().entry_index }
     }
 }
 
@@ -222,7 +216,6 @@ impl<T: ?Sized> Clone for Weak<T> {
     fn clone(&self) -> Self {
         Self {
             data: self.data.clone(),
-            entry_index: self.entry_index,
         }
     }
 }
@@ -234,7 +227,7 @@ pub trait Allocable {
 pub struct Header {
     pub size: usize,
     pub tag: TypeTag,
-    pub marked: bool,
+    pub marked: Cell<bool>,
     pub next_node: Option<usize>,
     pub strong_count: usize,
     pub weak_count: usize,
@@ -247,7 +240,7 @@ impl Header {
         Self {
             size: 0,
             tag: TypeTag::None,
-            marked: false,
+            marked: Cell::new(false),
             next_node: None,
             strong_count: 0,
             weak_count: 0,
@@ -259,7 +252,7 @@ impl Header {
         Self {
             size: 0,
             tag: TypeTag::None,
-            marked: false,
+            marked: Cell::new(false),
             next_node: next,
             strong_count: 0,
             weak_count: 0,
@@ -267,10 +260,11 @@ impl Header {
             vptr: None,
         }
     }
+
 }
 
 pub struct HeapEntry {
-    pub data: Option<ptr::NonNull<UnsafeCell<()>>>,
+    pub data: Option<ptr::NonNull<RawPtrBox<()>>>,
     pub header: Header,
 }
 
@@ -284,19 +278,15 @@ impl HeapEntry {
             None => (),
             Some(ptr) => match &self.header.tag {
                 TypeTag::Lambda => {
-                    // println!("Dropping lambda");
                     safe_drop_and_free::<runtime::Lambda>(ptr.as_ptr());
                 }
                 TypeTag::List => {
-                    // println!("Dropping list");
                     safe_drop_and_free::<Vec<WeakVal>>(ptr.as_ptr());
                 }
                 TypeTag::RuntimeFunc => {
-                    // println!("Dropping function");
                     safe_drop_and_free::<runtime::RuntimeFunc>(ptr.as_ptr());
                 }
                 TypeTag::String => {
-                    // println!("Dropping string");
                     safe_drop_and_free::<String>(ptr.as_ptr());
                 }
                 TypeTag::UserType => {
@@ -320,10 +310,17 @@ impl HeapEntry {
         }
         self.data = None;
     }
+
+    pub unsafe fn data_ref<T>(&self) -> &T {
+        debug_assert!(!self.header.dropped, "Cannot take reference to dropped data");
+        let ptr = &self.data.expect("Dereferencing free entry");
+        let ptr = ptr.as_ptr() as *const RawPtrBox<T>;
+        &*(*ptr).value.get()
+    }
 }
 
-unsafe fn safe_drop_and_free<T>(ptr: *mut UnsafeCell<()>) {
-    let ptr = ptr as *mut UnsafeCell<T>;
+unsafe fn safe_drop_and_free<T>(ptr: *mut RawPtrBox<()>) {
+    let ptr = ptr as *mut RawPtrBox<T>;
     drop(Box::from_raw(ptr));
 }
 
@@ -338,8 +335,8 @@ pub struct Heap {
     pub entries: Vec<HeapEntry>,
     pub first_vacant: Option<usize>,
     pub first_taken: Option<usize>,
-    pub vacant_entries: usize,
-    pub taken_entries: usize,
+    pub vacant_entries: Cell<usize>,
+    pub taken_entries: Cell<usize>,
 }
 
 const MEMORY_LIMIT: usize = 2050;
@@ -379,8 +376,8 @@ impl Heap {
             entries: get_initialized_heap_storage(capacity),
             first_taken: None,
             first_vacant: Some(capacity - 1),
-            taken_entries: 0,
-            vacant_entries: capacity,
+            taken_entries: 0.into(),
+            vacant_entries: capacity.into(),
         }
     }
     pub fn allocate_user_type<T: Allocable + NativeStruct>(&mut self, val: T) -> Root<T> {
@@ -396,9 +393,8 @@ impl Heap {
     }
 
     fn _allocate<T: Allocable>(&mut self, val: T, vptr: Option<&'static VirtualTable>) -> Root<T> {
-        let data = Self::heap_allocate(val);
         let header = Header {
-            marked: false,
+            marked: Cell::new(false),
             size: std::mem::size_of::<T>(),
             tag: T::tag(),
             next_node: self.first_taken,
@@ -407,15 +403,17 @@ impl Heap {
             dropped: false,
             vptr,
         };
-        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut UnsafeCell<()>) };
         let entry = HeapEntry {
-            data: Some(ptr.clone()),
+            data: None,
             header,
         };
         let entry_index = self.insert_entry(entry);
+        let data = Self::heap_allocate(val, entry_index);
+
+        let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut RawPtrBox<()>) };
+        self.entries[entry_index].data = Some(ptr.clone());
         Root {
-            data: unsafe { ptr::NonNull::new_unchecked(data) },
-            entry_index,
+            ptr: unsafe { ptr::NonNull::new_unchecked(data) },
             _phantom: PhantomData,
         }
     }
@@ -432,8 +430,8 @@ impl Heap {
                     self.entries[index].header.next_node = self.first_taken;
                 }
                 self.first_taken = Some(index);
-                self.taken_entries += 1;
-                self.vacant_entries -= 1;
+                self.taken_entries.set(self.taken_entries.get() + 1);
+                self.vacant_entries.set(self.vacant_entries.get() - 1);
                 index
             }
         }
@@ -454,7 +452,7 @@ impl Heap {
             self.entries.push(HeapEntry { data: None, header });
         }
         self.first_vacant = Some(self.entries.len() - 1);
-        self.vacant_entries = self.entries.len() - self.taken_entries;
+        self.vacant_entries.set(self.entries.len() - self.taken_entries.get());
     }
 
     pub fn mutate<T, R, Func, Ptr>(&mut self, ptr: &mut Ptr, func: Func) -> R
@@ -504,16 +502,18 @@ impl Heap {
         }
     }
 
-    fn heap_allocate<T>(val: T) -> *mut UnsafeCell<T> {
-        let ptr = Box::new(UnsafeCell::new(val));
+    fn heap_allocate<T>(val: T, entry_index: usize) -> *mut RawPtrBox<T> {
+        let ptr = Box::new(RawPtrBox{
+            entry_index,
+            value: UnsafeCell::new(val),
+        });
         Box::into_raw(ptr)
     }
 
     pub fn clone_root<T: ?Sized>(&mut self, ptr: &Root<T>) -> Root<T> {
-        self.increment_strong_count(ptr.entry_index);
+        self.increment_strong_count(ptr.entry_index());
         Root {
-            data: ptr.data.clone(),
-            entry_index: ptr.entry_index,
+            ptr: ptr.ptr.clone(),
             _phantom: PhantomData,
         }
     }
@@ -524,24 +524,22 @@ impl Heap {
 
     pub fn downgrade<T: ?Sized>(&mut self, ptr: Root<T>) -> Weak<T> {
         let weak = Weak {
-            data: ptr.data.clone(),
-            entry_index: ptr.entry_index,
+            data: ptr.ptr.clone(),
         };
         self.drop_root(ptr);
         weak
     }
 
     pub fn upgrade<T: ?Sized>(&mut self, ptr: Weak<T>) -> Root<T> {
-        self.increment_strong_count(ptr.entry_index);
+        self.increment_strong_count(ptr.entry_index());
         Root {
-            data: ptr.data,
-            entry_index: ptr.entry_index,
+            ptr: ptr.data,
             _phantom: PhantomData,
         }
     }
 
     pub fn drop_root<T: ?Sized>(&mut self, ptr: Root<T>) {
-        self.decrement_strong_count(ptr.entry_index);
+        self.decrement_strong_count(ptr.entry_index());
         std::mem::forget(ptr);
     }
 
@@ -554,8 +552,9 @@ impl Heap {
         entry.drop_data();
         entry.header.dropped = true;
 
-        self.vacant_entries += 1;
-        self.taken_entries -= 1;
+
+        self.taken_entries.set(self.taken_entries.get() - 1);
+        self.vacant_entries.set(self.vacant_entries.get() + 1);
 
         let next_taken_entry = entry.header.next_node;
 
@@ -613,18 +612,18 @@ impl MarkSweep {
         self.sweep(heap);
         let mut curr = heap.first_taken;
         while let Some(entry_index) = curr {
-            heap.entries[entry_index].header.marked = false;
+            heap.entries[entry_index].header.marked.set(false);
             curr = heap.entries[entry_index].header.next_node;
         }
     }
 
     fn mark(
         &mut self,
-        heap: &mut Heap,
+        heap: &Heap,
         call_stack: &Vec<FuncFrame>,
         modules: &HashMap<String, ModuleState>,
     ) {
-        if heap.taken_entries == 0 {
+        if heap.taken_entries.get() == 0 {
             return;
         }
         // mark roots
@@ -637,14 +636,14 @@ impl MarkSweep {
                 self.visit_env(&mut marked, heap, module_env.clone());
             }
         }
-        heap.taken_entries = marked.len();
-        heap.vacant_entries = heap.entries.len() - marked.len();
+        heap.taken_entries.set(marked.len());
+        heap.vacant_entries.set(heap.entries.len() - marked.len());
     }
 
     fn visit_call_stack(
         &self,
         marked: &mut Set<usize>,
-        heap: &mut Heap,
+        heap: &Heap,
         call_stack: &Vec<FuncFrame>,
     ) {
         for frame in call_stack {
@@ -655,14 +654,13 @@ impl MarkSweep {
         }
     }
 
-    fn traverse_and_mark(&self, heap: &mut Heap) -> Set<usize> {
+    fn traverse_and_mark(&self, heap: &Heap) -> Set<usize> {
         let mut marked = Set::new();
         let mut curr = heap.first_taken;
 
         const N: usize = 5;
         let mut last_n = Vec::new();
         while let Some(entry_index) = curr {
-            // println!("Current index {}", entry_index);
             if last_n.len() < N {
                 last_n.push(entry_index);
             } else {
@@ -674,7 +672,6 @@ impl MarkSweep {
                 }
             }
             if heap.entries[entry_index].header.strong_count > 0 {
-                // println!("String count is higher than 0 we enter");
                 self.visit_entry(&mut marked, heap, entry_index);
             }
             curr = heap.entries[entry_index].header.next_node;
@@ -682,13 +679,13 @@ impl MarkSweep {
         marked
     }
 
-    fn visit_entry(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_entry(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
         if marked.contains(&entry_index) {
             return;
         }
         marked.insert(entry_index);
-        let header = &mut heap.entries[entry_index].header;
-        header.marked = true;
+        let header = &heap.entries[entry_index].header;
+        header.marked.set(true);
         let walk_function = match header.tag {
             TypeTag::List => Self::visit_list,
             TypeTag::Lambda => Self::visit_lambda,
@@ -703,39 +700,36 @@ impl MarkSweep {
         walk_function(self, marked, heap, entry_index);
     }
 
-    fn visit_func(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_func(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
         // todo: remove unsafe usage here
-        let func_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const RuntimeFunc;
-        let func_ref = unsafe { func_ref.as_ref().unwrap() };
+        let func_ref = Self::entry_data::<RuntimeFunc>(heap, entry_index);
         self.visit_weak_val(marked, heap, &func_ref.body);
     }
 
-    fn visit_list(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_list(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
         // todo: remove unsafe usage here
-        let list_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Vec<WeakVal>;
-        let list_ref = unsafe { list_ref.as_ref().unwrap() };
+        let list_ref = Self::entry_data::<Vec<WeakVal>>(heap, entry_index);
         list_ref
             .iter()
             .for_each(|val| self.visit_weak_val(marked, heap, val));
     }
 
-    fn visit_lambda(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
+    fn visit_lambda(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
         // todo: remove unsafe usage here
-        let lambda_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const Lambda;
-        let lambda_ref = unsafe { lambda_ref.as_ref().unwrap() };
+        let lambda_ref = Self::entry_data::<Lambda>(heap, entry_index);
         self.visit_env(marked, heap, lambda_ref.env.clone());
         self.visit_weak_val(marked, heap, &lambda_ref.body);
     }
 
 
-    fn visit_user_type(&self, marked: &mut Set<usize>, heap: &mut Heap, entry_index: usize) {
-        let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const ();
+    fn visit_user_type(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
+        let pointer_ref = heap.entries[entry_index].data.unwrap().as_ptr() as *const RawPtrBox<()>;
         let visit_fn = heap.entries[entry_index].header.vptr.unwrap().visit;
-        visit_fn(pointer_ref, self, marked, heap);
+        visit_fn(pointer_ref , self, marked, heap);
     }
 
 
-    fn visit_env(&self, marked: &mut Set<usize>, heap: &mut Heap, env: Environment) {
+    fn visit_env(&self, marked: &mut Set<usize>, heap: &Heap, env: Environment) {
         let parent;
         {
             let inner = env.borrow();
@@ -749,18 +743,22 @@ impl MarkSweep {
         }
     }
 
-    fn visit_weak_val(&self, marked: &mut Set<usize>, heap: &mut Heap, val: &WeakVal) {
+    fn visit_weak_val(&self, marked: &mut Set<usize>, heap: &Heap, val: &WeakVal) {
         use WeakVal::*;
         match val {
-            Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            List(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index),
-            UserType(ptr) => self.visit_entry(marked, heap, ptr.data.entry_index),
+            Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
+            Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
+            List(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
+            StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
+            UserType(ptr) => self.visit_entry(marked, heap, ptr.data.entry_index()),
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
             NumberVal(_) | Symbol(_) | NativeFunc(_) => (),
         }
+    }
+
+    fn entry_data<'a, T>(heap: &'a Heap, entry_index: usize) -> &'a T {
+        unsafe { heap.entries[entry_index].data_ref() }
     }
 
     fn sweep(&mut self, heap: &mut Heap) {
@@ -773,14 +771,13 @@ impl MarkSweep {
         let mut last_marked = curr;
         let mut curr = heap.entries[curr].header.next_node;
         while let Some(entry_index) = curr {
-            let marked = heap.entries[entry_index].header.marked;
+            let marked = heap.entries[entry_index].header.marked.get();
             if marked {
                 let entry = &mut heap.entries[entry_index];
                 last_marked = entry_index;
                 curr = entry.header.next_node;
                 continue;
             }
-            print_debug_value(heap, entry_index);
             let entry = &mut heap.entries[entry_index];
             curr = entry.header.next_node;
             entry.drop_data();
@@ -794,8 +791,7 @@ impl MarkSweep {
 
     fn free_from_head(&mut self, heap: &mut Heap) -> Option<usize> {
         let mut curr = heap.first_taken?;
-        while !heap.entries[curr].header.marked {
-            print_debug_value(heap, curr);
+        while !heap.entries[curr].header.marked.get() {
             let entry = &mut heap.entries[curr];
             entry.drop_data();
             let next_node = entry.header.next_node;
@@ -809,37 +805,6 @@ impl MarkSweep {
         // we need to start removing from the middle
         Some(curr)
     }
-}
-
-fn print_debug_value(heap: &mut Heap, entry_index: usize) {
-    let entry = &heap.entries[entry_index];
-    let _to_print = match entry.header.tag {
-        TypeTag::Lambda => "[GC] Lambda is dropped".to_owned(),
-        TypeTag::None => "[GC] No type tag for the value".to_owned(),
-        TypeTag::RuntimeFunc => unsafe {
-            let ptr = entry.data.unwrap().as_ptr() as *const runtime::RuntimeFunc;
-            let as_ref = ptr.as_ref().unwrap();
-            format!("[GC] Dropping function with name {}", as_ref.name)
-        },
-        TypeTag::String => unsafe {
-            let ptr = entry.data.unwrap().as_ptr() as *const String;
-            let copy = ptr.as_ref().unwrap().clone();
-            format!("[GC] Dropping string {}", &copy)
-        },
-        TypeTag::List => unsafe {
-            let ptr = entry.data.unwrap().as_ptr() as *const Vec<WeakVal>;
-            let msg: Vec<String> = ptr
-                .as_ref()
-                .unwrap()
-                .iter()
-                .map(|x| x.simple_repr(heap))
-                .collect();
-            let msg = msg.concat();
-            format!("[GC] Dropping list: {}", &msg)
-        },
-        _ => format!("[GC] Unsupported tag")
-    };
-    // println!("{}", to_print);
 }
 
 #[cfg(test)]
@@ -929,7 +894,7 @@ mod tests {
     fn first_allocated_heap_entry_has_next_node_as_none() {
         let mut heap = Heap::with_capacity(10);
         let ptr = heap.allocate(String::new());
-        assert_eq!(heap.entries[ptr.entry_index].header.next_node, None);
+        assert_eq!(heap.entries[ptr.entry_index()].header.next_node, None);
         heap.drop_root(ptr);
     }
 
@@ -939,8 +904,8 @@ mod tests {
         let ptr1 = heap.allocate(String::new());
         let ptr2 = heap.allocate(String::new());
         assert_eq!(
-            heap.entries[ptr2.entry_index].header.next_node.unwrap(),
-            ptr1.entry_index
+            heap.entries[ptr2.entry_index()].header.next_node.unwrap(),
+            ptr1.entry_index()
         );
         heap.drop_root(ptr1);
         heap.drop_root(ptr2);
@@ -950,8 +915,8 @@ mod tests {
     fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
         let mut heap = Heap::with_capacity(10);
         let mut ptr1 = heap.allocate(Vec::new());
-        unsafe { ptr1.data.as_mut().get_mut().push(WeakVal::NumberVal(2.0)) }
-        let data_ref = *(&heap.entries[ptr1.entry_index]
+        unsafe { ptr1.ptr.as_mut().value.get_mut().push(WeakVal::NumberVal(2.0)) }
+        let data_ref = *(&heap.entries[ptr1.entry_index()]
             .data
             .as_ref()
             .unwrap()
@@ -972,8 +937,8 @@ mod tests {
         let mut heap = Heap::with_capacity(10);
         let ptr1 = heap.allocate(String::new());
         let ptr2 = heap.clone_root(&ptr1);
-        assert_eq!(ptr1.entry_index, ptr2.entry_index);
-        assert_eq!(ptr1.data.as_ptr(), ptr2.data.as_ptr());
+        assert_eq!(ptr1.entry_index(), ptr2.entry_index());
+        assert_eq!(ptr1.ptr.as_ptr(), ptr2.ptr.as_ptr());
         heap.drop_root(ptr1);
         heap.drop_root(ptr2);
     }
@@ -1011,8 +976,8 @@ mod tests {
         let mut heap = Heap::with_capacity(1);
         let mut ptr = heap.allocate(Vec::new());
         let ptr2 = heap.allocate(String::new());
-        unsafe { ptr.data.as_mut().get_mut().push(WeakVal::NumberVal(10.0)) };
-        let data_ref = *(&heap.entries[ptr.entry_index]
+        unsafe { ptr.ptr.as_mut().value.get_mut().push(WeakVal::NumberVal(10.0)) };
+        let data_ref = *(&heap.entries[ptr.entry_index()]
             .data
             .as_ref()
             .unwrap()
@@ -1033,7 +998,7 @@ mod tests {
     fn heap_allocation_preserves_data() {
         let mut heap = Heap::new();
         let ptr = heap.allocate("Hello".to_string());
-        assert_eq!(unsafe { (&*ptr.data.as_ref().get()).clone() }, "Hello");
+        assert_eq!(unsafe { (&*ptr.ptr.as_ref().value.get()).clone() }, "Hello");
         heap.drop_root(ptr);
     }
 }

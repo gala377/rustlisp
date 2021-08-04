@@ -1,10 +1,8 @@
-use std::cell::UnsafeCell;
-
 use crate::{eval::Interpreter, gc::{self, Allocable, Heap, Root, Set, Weak}, runtime::RootedVal};
 
 pub type DynDispatchFn = fn(Root<()>, &mut Interpreter, &str, Vec<RootedVal>) -> RootedVal;
-pub type DynVisitFn = fn(*const (), &gc::MarkSweep, &mut Set<usize>, &mut Heap);
-pub type DynDropFn = fn(*mut UnsafeCell<()>);
+pub type DynVisitFn = fn(*const gc::RawPtrBox<()>, &gc::MarkSweep, &mut Set<usize>, &Heap);
+pub type DynDropFn = fn(*mut gc::RawPtrBox<()>);
 
 pub struct VirtualTable {
     pub dispatch: DynDispatchFn,
@@ -14,14 +12,14 @@ pub struct VirtualTable {
 
 pub trait Dispatch: Sized {
     fn dispatch(this: &mut Root<Self>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
-    fn visit(&self, _gc: &gc::MarkSweep, _marked: &mut Set<usize>, _heap: &mut Heap) {}
+    fn visit(&self, _gc: &gc::MarkSweep, _marked: &mut Set<usize>, _heap: &Heap) {}
 }
 
 
 pub unsafe trait NativeStruct: Dispatch {
     fn erased_dispatch(this: Root<()>, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal;
-    fn erased_visit(this: *const (), gc: &gc::MarkSweep, marked: &mut Set<usize>, heap: &mut Heap);
-    fn erased_drop(this: *mut UnsafeCell<()>);
+    fn erased_visit(this: *const gc::RawPtrBox<()>, gc: &gc::MarkSweep, marked: &mut Set<usize>, heap: &Heap);
+    fn erased_drop(this: *mut gc::RawPtrBox<()>);
     fn vptr() -> &'static VirtualTable;
 }
 
@@ -70,21 +68,25 @@ macro_rules! register_native_type{
             }
 
             fn erased_visit(
-                this: *const (),
+                this: *const $crate::gc::RawPtrBox<()>,
                 gc: & $crate::gc::MarkSweep,
                 marked: &mut $crate::gc::Set<usize>,
-                heap: &mut $crate::gc::Heap)
+                heap: & $crate::gc::Heap)
             {
+                let self_box = unsafe { &*(this as *const $crate::gc::RawPtrBox<$name>) };
                 <$name as $crate::native::Dispatch>::visit(
-                    unsafe { &*(this as *const $name) },
+                    unsafe { &*self_box.value.get() },
                     gc,
                     marked,
                     heap,
                 );
             }
 
-            fn erased_drop(this: *mut std::cell::UnsafeCell<()>) {
-                drop(unsafe { Box::from_raw(this as *mut std::cell::UnsafeCell<$name>) });
+            fn erased_drop(this: *mut $crate::gc::RawPtrBox<()>) {
+                drop(unsafe {
+                    Box::from_raw(
+                        this as *mut $crate::gc::RawPtrBox<$name>)
+                });
             }
 
             fn vptr() -> &'static $crate::native::VirtualTable {
