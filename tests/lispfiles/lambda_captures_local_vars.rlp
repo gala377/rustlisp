@@ -1,3 +1,5 @@
+(def a 100)
+(def b 1000)
 
 (def (foo)
   (def a 10)
