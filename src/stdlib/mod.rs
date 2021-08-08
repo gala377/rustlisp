@@ -28,16 +28,15 @@ macro_rules! native_untyped_fn {
 macro_rules! native_typed_fn {
     ($name:ident ( $vm:ident, $( $args:pat ),* ) $body:expr) => {
         pub fn $name(
-            #[allow(unused_variable)] $vm: &mut crate::eval::Interpreter,
+            #[allow(unused_variables)] $vm: &mut crate::eval::Interpreter,
             #[allow(unused_mut)] mut args: Vec<crate::runtime::RootedVal>,
         ) -> crate::runtime::RootedVal {
-            let res = match &mut args[..] {
+            match &mut args[..] {
                 [$( $args),*] => {
                     $body
                 }
                 _ => panic!("{} wrong arguments in call", stringify!($name))
-            };
-            res
+            }
         }
     };
 }
@@ -94,8 +93,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
     use RootedVal::*;
     def_functions!(map, symbol_table, {
         // Generic functions
-        "eq?" => |vm, args| {
-            let res = match &args[..] {
+        "eq?" => |vm, args| match &args[..] {
                 [Symbol(a), Symbol(b)] => RootedVal::predicate(a == b),
                 [StringVal(a), StringVal(b)] => {
                     check_ptr!(vm.heap, a);
@@ -106,29 +104,24 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
                 [List(a), List(b)] => RootedVal::predicate(a == b),
                 [Lambda(a), Lambda(b)] => RootedVal::predicate(a == b),
                 _ => panic!("Can only compare 2 values of the same type"),
-            };
-            res
         },
         "equal?" => deep_eq,
         "repr" => |vm, args| {
             assert!(args.len() == 1);
-            let res = RootedVal::string(args[0].repr(&mut vm.heap, &mut vm.symbols), &mut vm.heap);
-            res
+            RootedVal::string(args[0].repr(&mut vm.heap, &mut vm.symbols), &mut vm.heap)
         },
         "+" => plus,
         "-" => minus,
         "to-str" => |vm, args| {
             assert!(args.len() == 1, "function str accepts only one parameter");
-            let res = RootedVal::string(args[0].str(&mut vm.heap, &mut vm.symbols), &mut vm.heap);
-            res
+            RootedVal::string(args[0].str(&mut vm.heap, &mut vm.symbols), &mut vm.heap)
         },
 
         // functions
         "apply" => |vm, mut args: Vec<RootedVal>| {
             assert!(!args.is_empty(), "Cannot apply nothing");
             let func = args.remove(0);
-            let res = vm.call(&func, args);
-            res
+            vm.call(&func, args)
         },
 
         // lists
@@ -148,8 +141,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
             if let List(list) = list {
                 assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take tail from empty list");
                 let tail = vm.heap.deref_ptr(&list).iter().skip(1).cloned().collect();
-                let res = RootedVal::list(tail, &mut vm.heap);
-                res
+                RootedVal::list(tail, &mut vm.heap)
             } else {
                 panic!("you can only use head on a lists");
             }
@@ -188,7 +180,7 @@ native_module! {
     typed less_than(vm, NumberVal(a), NumberVal(b)) =>
         RootedVal::predicate(*a < *b);
 
-    print_globals(vm, args) {
+    print_globals(vm, _args) {
         let globals = vm.get_globals();
         println!("Printing globals:");
         for (k, v) in &globals.borrow().values {
@@ -207,11 +199,7 @@ native_module! {
             args[1].repr(&vm.heap, &vm.symbols));
         let res = vm.call(&func, args);
         match res {
-            RootedVal::Symbol(x) => {
-                if x == BuiltinSymbols::True as usize {
-                    return RootedVal::sym_true();
-                }
-            }
+            RootedVal::Symbol(x) if x == BuiltinSymbols::True as usize => return RootedVal::sym_true(),
             _ => (),
         };
         match message {
@@ -271,11 +259,10 @@ native_module! {
 
     concatenate_strings(vm, args) {
         RootedVal::string(
-            args.into_iter().fold(String::new(), |acc, x| match x {
+            args.into_iter().fold(String::new(), |mut acc, x| match x {
                 RootedVal::StringVal(inner) => {
-                    check_ptr!(vm.heap, inner);
-                    let res = acc + &vm.heap.deref_ptr(&inner);
-                    res
+                    acc += &vm.heap.deref_ptr(&inner);
+                    acc
                 }
                 _ => panic!("Types mismatched"),
             }),
@@ -338,10 +325,7 @@ fn deep_equal_impl(vm: &mut Interpreter, a: &RootedVal, b: &RootedVal) -> bool {
             } else {
                 let mut res = true;
                 for i in 0..len_a {
-                    let (elem_a, elem_b) = (
-                        vm.get_ref(a)[i].clone().upgrade(),
-                        vm.get_ref(b)[i].clone().upgrade(),
-                    );
+                    let (elem_a, elem_b) = (vm.get_ref(a)[i].as_root(), vm.get_ref(b)[i].as_root());
                     res = deep_equal_impl(vm, &elem_a, &elem_b);
                     if !res {
                         break;

@@ -49,11 +49,12 @@ impl Vm {
         let AST { program } =
             reader::read(source, &mut self.interpreter.heap, symbol_table).unwrap();
         let last_rooted = program
-            .iter()
+            .into_iter()
             .map(|expr| self.interpreter.eval(&expr))
             .last()
             .unwrap();
         let result = func(&last_rooted, &self.interpreter.heap);
+        drop(last_rooted);
         self.interpreter.run_gc();
         result
     }

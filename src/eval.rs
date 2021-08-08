@@ -68,7 +68,7 @@ impl Interpreter {
 
     fn eval_weak(&mut self, expr: &WeakVal) -> RootedVal {
         match expr {
-            WeakVal::NumberVal(_) | WeakVal::StringVal(_) => expr.clone().upgrade(),
+            WeakVal::NumberVal(_) | WeakVal::StringVal(_) => expr.as_root(),
             WeakVal::Symbol(val) => self.eval_symbol(*val),
             WeakVal::List(val) => self.eval_list(val),
             _ => panic!("Cannot evaluate this node"),
@@ -80,7 +80,7 @@ impl Interpreter {
             let mut env = env.clone();
             loop {
                 if let Some(val) = env.borrow().values.get(&expr) {
-                    return val.clone().upgrade();
+                    return val.as_root();
                 }
                 if let Some(val) = env.into_parent() {
                     env = val;
@@ -120,7 +120,7 @@ impl Interpreter {
                     let func = self.get_ref(func);
                     (func.body.clone(), func.args.clone(), func.globals.clone())
                 };
-                let func_env = func_call_env(&mut self.heap, &func_args, args);
+                let func_env = func_call_env(&func_args, args);
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
@@ -139,8 +139,7 @@ impl Interpreter {
                         func.globals.clone(),
                     )
                 };
-                let func_env =
-                    func_call_env_with_parent(&mut self.heap, &func_args, args, func_env);
+                let func_env = func_call_env_with_parent(&func_args, args, func_env);
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
@@ -149,16 +148,13 @@ impl Interpreter {
                     |vm| vm.eval_weak(&func_body),
                 )
             }
-            RootedVal::NativeFunc(func) => {
-                let res = self.with_frame(
-                    FuncFrame {
-                        globals: self.get_globals(),
-                        locals: None,
-                    },
-                    |vm| func(vm, args),
-                );
-                res
-            }
+            RootedVal::NativeFunc(func) => self.with_frame(
+                FuncFrame {
+                    globals: self.get_globals(),
+                    locals: None,
+                },
+                |vm| func(vm, args),
+            ),
             _ => panic!("first symbol of a list should refer to a function"),
         };
         // If we've allocated more that 3/4th of the tracking entries
@@ -287,8 +283,9 @@ impl Interpreter {
     where
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
-        let mut allocs = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
-        allocs.pop().unwrap()
+        map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val))
+            .pop()
+            .unwrap()
     }
 
     fn eval_quote<Ptr>(&mut self, vals: &Ptr) -> RootedVal
@@ -348,7 +345,7 @@ impl Interpreter {
             _ => panic!("couldn't possibly quasiquote this"),
         };
         match action {
-            Action::Upgrade => expr.clone().upgrade(),
+            Action::Upgrade => expr.as_root(),
             Action::Unquote => {
                 if let WeakVal::List(inner) = expr {
                     let raw_val = {
@@ -591,28 +588,22 @@ impl Interpreter {
 }
 
 #[inline]
-fn func_call_env(heap: &mut Heap, args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
+fn func_call_env(args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
     let func_env = Environment::new();
-    populate_env(heap, func_env, args, values)
+    populate_env(func_env, args, values)
 }
 
 #[inline]
 fn func_call_env_with_parent(
-    heap: &mut Heap,
     args: &[SymbolId],
     values: Vec<RootedVal>,
     parent: Environment,
 ) -> Environment {
     let func_env = Environment::with_parent(parent);
-    populate_env(heap, func_env, args, values)
+    populate_env(func_env, args, values)
 }
 
-fn populate_env(
-    heap: &mut Heap,
-    mut env: Environment,
-    args: &[SymbolId],
-    values: Vec<RootedVal>,
-) -> Environment {
+fn populate_env(mut env: Environment, args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
     assert_eq!(
         values.len(),
         args.len(),
@@ -663,7 +654,8 @@ where
     Ptr: ScopedRef<Vec<WeakVal>>,
     Func: FnMut(&mut Interpreter, &WeakVal) -> Res,
 {
-    let mut res = Vec::new();
+    let len = vm.get_ref(ptr).len();
+    let mut res = Vec::with_capacity(len - range.0 - range.1);
     let size = vm.get_ref(ptr).len();
     for i in range.0..(size - range.1) {
         let raw_val = {

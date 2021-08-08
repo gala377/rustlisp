@@ -76,12 +76,11 @@ macro_rules! register_native_type{
                 args: Vec<$crate::runtime::RootedVal>
             ) -> $crate::runtime::RootedVal {
                 let mut self_ = unsafe { this.cast::<$name>() } ;
-                let res = <$name as $crate::native::Dispatch>::dispatch(
+                <$name as $crate::native::Dispatch>::dispatch(
                     &mut self_,
                     vm,
                     method,
-                    args);
-                res
+                    args)
             }
 
             fn erased_visit(

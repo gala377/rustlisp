@@ -86,13 +86,7 @@ where
     let mut prog = Vec::new();
     while let Some(atom) = curr_atom.next() {
         match atom {
-            Token::LeftBracket => {
-                let list_res = parse_list(&mut curr_atom, heap, symbol_table);
-                match list_res {
-                    Ok(val) => prog.push(val),
-                    Err(err) => return Err(err),
-                }
-            }
+            Token::LeftBracket => prog.push(parse_list(&mut curr_atom, heap, symbol_table)?),
             _ => return Err(ParseError::UnexpectedAtom),
         }
     }

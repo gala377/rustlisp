@@ -1,9 +1,8 @@
 use crate::{
-    check_ptr,
     env::BuiltinSymbols,
     env::{Environment, SymbolId, SymbolTable},
     eval::Interpreter,
-    gc::{self, Allocable, Heap, HeapMarked, Root, TypeTag},
+    gc::{self, Allocable, Heap, Root, TypeTag},
     native::{NativeStruct, RootedStructPtr, WeakStructPtr},
 };
 use std::rc::Rc;
@@ -88,12 +87,12 @@ impl Allocable for RuntimeFunc {
 pub enum RootedVal {
     // Copy types
     NumberVal(f64),
-    StringVal(Root<std::string::String>),
     Symbol(SymbolId),
 
     // Reference immutable types
     Func(Root<RuntimeFunc>),
     NativeFunc(NativeFunc),
+    StringVal(Root<std::string::String>),
 
     // Mutable reference types
     Lambda(Root<Lambda>),
@@ -183,10 +182,9 @@ impl RootedVal {
     }
 
     pub fn list_from_rooted(val: Vec<RootedVal>, heap: &mut Heap) -> RootedVal {
-        let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::new());
-        check_ptr!(heap, inner);
-        let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade()).collect();
-        heap.deref_ptr_mut(&mut inner).extend(val.into_iter());
+        let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::with_capacity(val.len()));
+        heap.deref_ptr_mut(&mut inner)
+            .extend(val.into_iter().map(RootedVal::downgrade));
         Self::List(inner)
     }
 
@@ -209,6 +207,9 @@ impl RootedVal {
                     res += &val.repr(heap, symbol_table);
                     res += " ";
                 });
+                if res.chars().last().unwrap().is_whitespace() {
+                    res.pop();
+                }
                 res += ")";
                 res
             }
@@ -273,6 +274,10 @@ impl WeakVal {
             Lambda(x) => RootedVal::Lambda(x.upgrade()),
             UserType(x) => RootedVal::UserType(x.upgrade()),
         }
+    }
+
+    pub fn as_root(&self) -> RootedVal {
+        self.clone().upgrade()
     }
 
     pub fn native_function<Func>(func: Func) -> WeakVal
@@ -343,6 +348,9 @@ impl WeakVal {
                     res += &val.simple_repr(heap);
                     res += " ";
                 });
+                if res.chars().last().unwrap().is_whitespace() {
+                    res.pop();
+                }
                 res += ")";
                 res
             }
