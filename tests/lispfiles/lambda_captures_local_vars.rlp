@@ -1,0 +1,11 @@
+
+(def (foo)
+  (def a 10)
+  (def b 20)
+  (lambda () '(a b)))
+
+(def func (foo))
+
+
+(assert-equal (func) '(10 20) "Assertion failed")
+

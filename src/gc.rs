@@ -96,7 +96,7 @@ pub trait HeapMarked {
 pub unsafe trait ScopeGuard {}
 
 /// Represents allocated value alongside header information.
-/// 
+///
 /// repr(C) is required here because we always want to have header information
 /// layed out the same way starting from the beginning of the struct
 /// regardless of the contained type. This way the alignment of the struct

@@ -111,6 +111,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
             drop_rooted_vec(&mut vm.heap, args);
             res
         },
+        "equal?" => deep_eq,
         "repr" => |vm, args| {
             assert!(args.len() == 1);
             let res = RootedVal::string(args[0].repr(&mut vm.heap, &mut vm.symbols), &mut vm.heap);
@@ -183,6 +184,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "load" => load::load_from_file_runtime_wrapper,
         "__load" => load::load_from_file_without_std_env_runtime_wrapper,
         "assert" => assert_impl,
+        "assert-equal" => assert_equal_impl,
         "print-globals" => print_globals,
     });
 }
@@ -208,6 +210,9 @@ native_module! {
     assert_impl(vm, args) {
         let message = args.pop().unwrap();
         let func = vm.get_value("eq?").unwrap();
+        let eq_msg = format!("{} != {}",
+            args[0].repr(&vm.heap, &vm.symbols),
+            args[1].repr(&vm.heap, &vm.symbols));
         let res = vm.call(&func, args);
         match res {
             RootedVal::Symbol(x) => {
@@ -224,7 +229,35 @@ native_module! {
                 check_ptr!(vm.heap, ptr);
                 let msg = vm.heap.deref_ptr(&ptr).clone();
                 vm.heap.drop_root(ptr);
-                panic!("{}", msg);
+                panic!("{} ({})", msg, eq_msg);
+            }
+            _ => panic!("Assertion failed with unknown message"),
+        }
+    };
+
+    assert_equal_impl(vm, args) {
+        let message = args.pop().unwrap();
+        let func = vm.get_value("equal?").unwrap();
+        let eq_msg = format!("{} != {}",
+            args[0].repr(&vm.heap, &vm.symbols),
+            args[1].repr(&vm.heap, &vm.symbols));
+        let res = vm.call(&func, args);
+        match res {
+            RootedVal::Symbol(x) => {
+                if x == BuiltinSymbols::True as usize {
+                    message.heap_drop(&mut vm.heap);
+                    func.heap_drop(&mut vm.heap);
+                    return RootedVal::sym_true();
+                }
+            }
+            _ => (),
+        };
+        match message {
+            RootedVal::StringVal(ptr) => {
+                check_ptr!(vm.heap, ptr);
+                let msg = vm.heap.deref_ptr(&ptr).clone();
+                vm.heap.drop_root(ptr);
+                panic!("{} ({})", msg, eq_msg);
             }
             _ => panic!("Assertion failed with unknown message"),
         }
@@ -299,4 +332,42 @@ native_module! {
         let method = vm.get_ref(method).clone();
         this.dispatch(vm, &method, method_args)
     };
+
+    typed deep_eq(vm, a, b) {
+        RootedVal::predicate(deep_equal_impl(vm, a, b))
+    };
+}
+
+fn deep_equal_impl(vm: &mut Interpreter, a: &RootedVal, b: &RootedVal) -> bool {
+    match (a, b) {
+        (NumberVal(a), NumberVal(b)) => a == b,
+        (StringVal(a), StringVal(b)) => vm.get_ref(a).eq(&*vm.get_ref(b)),
+        (Symbol(a), Symbol(b)) => a == b,
+        (Func(a), Func(b)) => a == b,
+        (NativeFunc(a), NativeFunc(b)) => std::ptr::eq(a.as_ref(), b.as_ref()),
+        (Lambda(a), Lambda(b)) => a == b,
+        (UserType(a), UserType(b)) => a.data == b.data,
+        (List(a), List(b)) => {
+            let len_a = vm.get_ref(a).len();
+            let len_b = vm.get_ref(b).len();
+            if len_a != len_b {
+                false
+            } else {
+                let mut res = true;
+                for i in 0..len_a {
+                    let (elem_a, elem_b) = (vm.get_ref(a)[i].clone(), vm.get_ref(b)[i].clone());
+                    let (elem_a, elem_b) =
+                        (elem_a.upgrade(&mut vm.heap), elem_b.upgrade(&mut vm.heap));
+                    res = deep_equal_impl(vm, &elem_a, &elem_b);
+                    elem_a.heap_drop(&mut vm.heap);
+                    elem_b.heap_drop(&mut vm.heap);
+                    if !res {
+                        break;
+                    }
+                }
+                res
+            }
+        }
+        _ => false,
+    }
 }

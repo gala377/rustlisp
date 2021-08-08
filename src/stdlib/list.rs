@@ -59,4 +59,5 @@ native_module! {
 
     typed size(vm, List(val)) =>
         RootedVal::NumberVal(vm.heap.deref_ptr(val).len() as f64);
+
 }

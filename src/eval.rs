@@ -316,9 +316,18 @@ impl Interpreter {
             "you can only quote single expression"
         );
         let quoted = self.get_ref(vals)[1].clone();
+        // not really quote is just first layer uneval
         // Quote is just passing unevaluated code
         // the only thing we need to do is root it.
-        quoted.upgrade(&mut self.heap)
+        use WeakVal::*;
+        match &quoted {
+            Symbol(_) | NumberVal(_) | StringVal(_) => quoted.upgrade(&mut self.heap),
+            List(inner) => {
+                let res = map_scoped_vec(self, inner, |vm, val| vm.eval_weak(val));
+                RootedVal::list_from_rooted(res, &mut self.heap)
+            }
+            _ => panic!("This shouldn't be possible to be quoted"),
+        }
     }
 
     fn eval_quasiquote<Ptr>(&mut self, vals: &Ptr) -> RootedVal
