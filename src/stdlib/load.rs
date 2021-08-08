@@ -4,7 +4,7 @@ use crate::{
     eval::{FuncFrame, Interpreter, ModuleState},
     gc::HeapMarked,
     reader::{self, AST},
-    runtime::{self, RootedVal},
+    runtime::RootedVal,
     stdlib,
 };
 
@@ -38,7 +38,6 @@ fn _load_from_file_runtime_wrapper(
         }
         _ => panic!("illegal form of load"),
     }
-    arg.heap_drop(&mut vm.heap);
     RootedVal::none()
 }
 
@@ -71,10 +70,8 @@ fn load_module(vm: &mut Interpreter, source: &str, load_std_env: bool) -> Enviro
     if load_std_env {
         stdlib::add_std_lib(vm);
     }
-    program.iter().for_each(|expr| {
-        let res = vm.eval(&expr);
-        res.heap_drop(&mut vm.heap);
+    program.into_iter().for_each(|expr| {
+        vm.eval(&expr);
     });
-    runtime::drop_rooted_vec(&mut vm.heap, program);
     vm.call_stack.pop().unwrap().globals
 }

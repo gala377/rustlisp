@@ -5,7 +5,7 @@ use crate::{
     env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
     eval::Interpreter,
     gc::HeapMarked,
-    runtime::{drop_rooted_vec, RootedVal, WeakVal},
+    runtime::{RootedVal, WeakVal},
 };
 
 mod list;
@@ -37,7 +37,6 @@ macro_rules! native_typed_fn {
                 }
                 _ => panic!("{} wrong arguments in call", stringify!($name))
             };
-            $crate::runtime::drop_rooted_vec(&mut $vm.heap, args);
             res
         }
     };
@@ -108,14 +107,12 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
                 [Lambda(a), Lambda(b)] => RootedVal::predicate(a == b),
                 _ => panic!("Can only compare 2 values of the same type"),
             };
-            drop_rooted_vec(&mut vm.heap, args);
             res
         },
         "equal?" => deep_eq,
         "repr" => |vm, args| {
             assert!(args.len() == 1);
             let res = RootedVal::string(args[0].repr(&mut vm.heap, &mut vm.symbols), &mut vm.heap);
-            drop_rooted_vec(&mut vm.heap, args);
             res
         },
         "+" => plus,
@@ -123,7 +120,6 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "to-str" => |vm, args| {
             assert!(args.len() == 1, "function str accepts only one parameter");
             let res = RootedVal::string(args[0].str(&mut vm.heap, &mut vm.symbols), &mut vm.heap);
-            drop_rooted_vec(&mut vm.heap, args);
             res
         },
 
@@ -132,7 +128,6 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
             assert!(!args.is_empty(), "Cannot apply nothing");
             let func = args.remove(0);
             let res = vm.call(&func, args);
-            func.heap_drop(&mut vm.heap);
             res
         },
 
@@ -154,7 +149,6 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
                 assert!(!vm.heap.deref_ptr(&list).is_empty(), "You cannot take tail from empty list");
                 let tail = vm.heap.deref_ptr(&list).iter().skip(1).cloned().collect();
                 let res = RootedVal::list(tail, &mut vm.heap);
-                vm.heap.drop_root(list);
                 res
             } else {
                 panic!("you can only use head on a lists");
@@ -171,7 +165,6 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "print" => |vm, args| {
             args.into_iter().for_each(|x| {
                 println!("{}", x.str(&mut vm.heap, &mut vm.symbols));
-                x.heap_drop(&mut vm.heap);
             });
             RootedVal::none()
         },
@@ -203,7 +196,6 @@ native_module! {
             let symbol = vm.symbols[*k].clone();
             println!("\t{:20}|{}", symbol, printable);
         }
-        drop_rooted_vec(&mut vm.heap, args);
         RootedVal::none()
     };
 
@@ -217,8 +209,6 @@ native_module! {
         match res {
             RootedVal::Symbol(x) => {
                 if x == BuiltinSymbols::True as usize {
-                    message.heap_drop(&mut vm.heap);
-                    func.heap_drop(&mut vm.heap);
                     return RootedVal::sym_true();
                 }
             }
@@ -228,7 +218,6 @@ native_module! {
             RootedVal::StringVal(ptr) => {
                 check_ptr!(vm.heap, ptr);
                 let msg = vm.heap.deref_ptr(&ptr).clone();
-                vm.heap.drop_root(ptr);
                 panic!("{} ({})", msg, eq_msg);
             }
             _ => panic!("Assertion failed with unknown message"),
@@ -245,8 +234,6 @@ native_module! {
         match res {
             RootedVal::Symbol(x) => {
                 if x == BuiltinSymbols::True as usize {
-                    message.heap_drop(&mut vm.heap);
-                    func.heap_drop(&mut vm.heap);
                     return RootedVal::sym_true();
                 }
             }
@@ -256,7 +243,6 @@ native_module! {
             RootedVal::StringVal(ptr) => {
                 check_ptr!(vm.heap, ptr);
                 let msg = vm.heap.deref_ptr(&ptr).clone();
-                vm.heap.drop_root(ptr);
                 panic!("{} ({})", msg, eq_msg);
             }
             _ => panic!("Assertion failed with unknown message"),
@@ -289,7 +275,6 @@ native_module! {
                 RootedVal::StringVal(inner) => {
                     check_ptr!(vm.heap, inner);
                     let res = acc + &vm.heap.deref_ptr(&inner);
-                    vm.heap.drop_root(inner);
                     res
                 }
                 _ => panic!("Types mismatched"),
@@ -319,16 +304,14 @@ native_module! {
         let result = vm.heap.allocate(init);
         // Copied values are now rooted after we put result into heap
         // so we can safely drop them.
-        drop_rooted_vec(&mut vm.heap, args);
         RootedVal::List(result)
     };
 
     typed dispatch(vm, UserType(this), StringVal(method), List(method_args)) {
-        let method_args = {
-            let weak_args: Vec<_> = vm.get_ref(method_args).iter().cloned().collect();
-            let rooted_args: Vec<_> = weak_args.into_iter().map(|x| x.upgrade(&mut vm.heap)).collect();
-            rooted_args
-        };
+        let method_args = vm.get_ref(method_args).iter()
+            .cloned()
+            .map(WeakVal::upgrade)
+            .collect();
         let method = vm.get_ref(method).clone();
         this.dispatch(vm, &method, method_args)
     };
@@ -355,12 +338,10 @@ fn deep_equal_impl(vm: &mut Interpreter, a: &RootedVal, b: &RootedVal) -> bool {
             } else {
                 let mut res = true;
                 for i in 0..len_a {
-                    let (elem_a, elem_b) = (vm.get_ref(a)[i].clone(), vm.get_ref(b)[i].clone());
-                    let (elem_a, elem_b) =
-                        (elem_a.upgrade(&mut vm.heap), elem_b.upgrade(&mut vm.heap));
+                    let (elem_a, elem_b) = (
+                        vm.get_ref(a)[i].clone().upgrade(),
+                        vm.get_ref(b)[i].clone().upgrade());
                     res = deep_equal_impl(vm, &elem_a, &elem_b);
-                    elem_a.heap_drop(&mut vm.heap);
-                    elem_b.heap_drop(&mut vm.heap);
                     if !res {
                         break;
                     }

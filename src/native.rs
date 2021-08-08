@@ -81,7 +81,6 @@ macro_rules! register_native_type{
                     vm,
                     method,
                     args);
-                vm.heap.drop_root(self_);
                 res
             }
 
@@ -122,6 +121,7 @@ macro_rules! register_native_type{
     };
 }
 
+#[derive(Clone)]
 pub struct RootedStructPtr {
     pub data: Root<()>,
     pub vptr: &'static VirtualTable,
@@ -136,27 +136,16 @@ impl RootedStructPtr {
         }
     }
 
-    pub fn downgrade(self, heap: &mut Heap) -> WeakStructPtr {
+    pub fn downgrade(self) -> WeakStructPtr {
         WeakStructPtr {
-            data: heap.downgrade(self.data),
+            data: self.data.downgrade(),
             vptr: self.vptr,
         }
     }
 
     pub fn dispatch(&self, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal {
-        let self_ = vm.heap.clone_root(&self.data);
+        let self_ = self.data.clone();
         (self.vptr.dispatch)(self_, vm, method, args)
-    }
-
-    pub fn heap_drop(self, heap: &mut Heap) {
-        heap.drop_root(self.data)
-    }
-
-    pub fn clone(&self, heap: &mut Heap) -> Self {
-        Self {
-            data: heap.clone_root(&self.data),
-            vptr: self.vptr,
-        }
     }
 }
 
@@ -167,15 +156,15 @@ pub struct WeakStructPtr {
 }
 
 impl WeakStructPtr {
-    pub fn upgrade(self, heap: &mut Heap) -> RootedStructPtr {
+    pub fn upgrade(self) -> RootedStructPtr {
         RootedStructPtr {
-            data: heap.upgrade(self.data),
+            data: self.data.upgrade(),
             vptr: self.vptr,
         }
     }
 
     pub fn dispatch(&self, vm: &mut Interpreter, method: &str, args: Vec<RootedVal>) -> RootedVal {
-        let self_ = vm.heap.upgrade(self.data.clone());
+        let self_ = self.data.clone().upgrade();
         (self.vptr.dispatch)(self_, vm, method, args)
     }
 }

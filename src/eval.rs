@@ -5,7 +5,7 @@ use crate::gc::HeapMarked;
 use crate::{
     env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
     gc::{Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
-    runtime::{drop_rooted_vec, RootedVal, WeakVal},
+    runtime::{RootedVal, WeakVal},
     utils::JoinedIterator,
 };
 
@@ -59,7 +59,7 @@ impl Interpreter {
 
     fn eval_rooted(&mut self, expr: &RootedVal) -> RootedVal {
         match expr {
-            RootedVal::NumberVal(_) | RootedVal::StringVal(_) => expr.clone(&mut self.heap),
+            RootedVal::NumberVal(_) | RootedVal::StringVal(_) => expr.clone(),
             RootedVal::Symbol(val) => self.eval_symbol(*val),
             RootedVal::List(val) => self.eval_list(val),
             _ => panic!("Cannot evaluate this node"),
@@ -68,7 +68,7 @@ impl Interpreter {
 
     fn eval_weak(&mut self, expr: &WeakVal) -> RootedVal {
         match expr {
-            WeakVal::NumberVal(_) | WeakVal::StringVal(_) => expr.clone().upgrade(&mut self.heap),
+            WeakVal::NumberVal(_) | WeakVal::StringVal(_) => expr.clone().upgrade(),
             WeakVal::Symbol(val) => self.eval_symbol(*val),
             WeakVal::List(val) => self.eval_list(val),
             _ => panic!("Cannot evaluate this node"),
@@ -80,7 +80,7 @@ impl Interpreter {
             let mut env = env.clone();
             loop {
                 if let Some(val) = env.borrow().values.get(&expr) {
-                    return val.clone().upgrade(&mut self.heap);
+                    return val.clone().upgrade();
                 }
                 if let Some(val) = env.into_parent() {
                     env = val;
@@ -95,7 +95,7 @@ impl Interpreter {
             .get(&expr)
             .expect(&format!("symbol {} not defined", self.symbols[expr]))
             .clone()
-            .upgrade(&mut self.heap)
+            .upgrade()
     }
 
     fn eval_list<Ptr>(&mut self, vals: &Ptr) -> RootedVal
@@ -110,9 +110,7 @@ impl Interpreter {
         }
         let mut evaled = map_scoped_vec(self, vals, |vm, val| vm.eval_weak(val));
         let func = evaled.remove(0);
-        let res = self.call(&func, evaled);
-        func.heap_drop(&mut self.heap);
-        res
+        self.call(&func, evaled)
     }
 
     pub fn call(&mut self, func: &RootedVal, args: Vec<RootedVal>) -> RootedVal {
@@ -249,7 +247,7 @@ impl Interpreter {
                 create_env
                     .borrow_mut()
                     .values
-                    .insert(name.clone(), evaled.downgrade(&mut self.heap));
+                    .insert(name.clone(), evaled.downgrade());
             }
             Pattern::Function { name, args, body } => {
                 let body = prepare_function_body(body, &mut self.heap);
@@ -257,14 +255,14 @@ impl Interpreter {
                 let function = RootedVal::function(
                     name,
                     args,
-                    body.downgrade(&mut self.heap),
+                    body.downgrade(),
                     globals,
                     &mut self.heap,
                 );
                 create_env
                     .borrow_mut()
                     .values
-                    .insert(name.clone(), function.downgrade(&mut self.heap));
+                    .insert(name.clone(), function.downgrade());
             }
         }
         RootedVal::none()
@@ -290,7 +288,7 @@ impl Interpreter {
         RootedVal::lambda(
             locals,
             args,
-            body.downgrade(&mut self.heap),
+            body.downgrade(),
             globals,
             &mut self.heap,
         )
@@ -301,9 +299,7 @@ impl Interpreter {
         Ptr: ScopedRef<Vec<WeakVal>>,
     {
         let mut allocs = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
-        let res = allocs.pop().unwrap();
-        drop_rooted_vec(&mut self.heap, allocs);
-        res
+        allocs.pop().unwrap()
     }
 
     fn eval_quote<Ptr>(&mut self, vals: &Ptr) -> RootedVal
@@ -321,7 +317,7 @@ impl Interpreter {
         // the only thing we need to do is root it.
         use WeakVal::*;
         match &quoted {
-            Symbol(_) | NumberVal(_) | StringVal(_) => quoted.upgrade(&mut self.heap),
+            Symbol(_) | NumberVal(_) | StringVal(_) => quoted.upgrade(),
             List(inner) => {
                 let res = map_scoped_vec(self, inner, |vm, val| vm.eval_weak(val));
                 RootedVal::list_from_rooted(res, &mut self.heap)
@@ -363,7 +359,7 @@ impl Interpreter {
             _ => panic!("couldn't possibly quasiquote this"),
         };
         match action {
-            Action::Upgrade => expr.clone().upgrade(&mut self.heap),
+            Action::Upgrade => expr.clone().upgrade(),
             Action::Unquote => {
                 if let WeakVal::List(inner) = expr {
                     let raw_val = {
@@ -407,7 +403,6 @@ impl Interpreter {
             RootedVal::Symbol(val) if val == BuiltinSymbols::False as SymbolId => if_false,
             _ => panic!("If predicate needs to eval to #t or #f"),
         };
-        res.heap_drop(&mut self.heap);
         self.eval_weak(&eval_next)
     }
 
@@ -420,14 +415,8 @@ impl Interpreter {
             "while expr needs at least 2 clauses"
         );
         let cond = self.get_ref(expr)[1].clone();
-        while {
-            let cond_value = self.eval_weak(&cond);
-            let next_it = cond_value.is_symbol(BuiltinSymbols::True as usize);
-            cond_value.heap_drop(&mut self.heap);
-            next_it
-        } {
-            let allocs = map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
-            drop_rooted_vec(&mut self.heap, allocs);
+        while self.eval_weak(&cond).is_symbol(BuiltinSymbols::True as usize) {
+            map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
         }
         RootedVal::none()
     }
@@ -447,7 +436,7 @@ impl Interpreter {
                     let mut env = env.clone();
                     found = loop {
                         if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
-                            let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
+                            let val = val.clone().downgrade();
                             *env_entry = val;
                             break true;
                         };
@@ -461,7 +450,7 @@ impl Interpreter {
                 if !found {
                     match self.get_globals().borrow_mut().values.get_mut(inner) {
                         Some(env_entry) => {
-                            let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
+                            let val = val.clone().downgrade();
                             *env_entry = val;
                         }
                         None => panic!("Trying to set! not defined location"),
@@ -486,13 +475,11 @@ impl Interpreter {
                 if index >= len {
                     panic!("Trying to set list location past its size")
                 }
-                let val = val.clone(&mut self.heap).downgrade(&mut self.heap);
+                let val = val.clone().downgrade();
                 self.get_mut(&mut list)[index] = val;
-                self.heap.drop_root(list);
             }
             _ => panic!("Invalid set!"),
         }
-        val.heap_drop(&mut self.heap);
         RootedVal::none()
     }
 
@@ -523,7 +510,7 @@ impl Interpreter {
         };
         let let_env: HashMap<_, _> = evaled_bindings
             .into_iter()
-            .map(|(name, val)| (name, val.downgrade(&mut self.heap)))
+            .map(|(name, val)| (name, val.downgrade()))
             .collect();
         let mut let_env: Environment = let_env.into();
         {
@@ -541,7 +528,6 @@ impl Interpreter {
         let res = results
             .pop()
             .expect("Let evaluation should not yield empty results");
-        drop_rooted_vec(&mut self.heap, results);
         // pop local env
         self.get_frame_mut().locals = let_env.into_parent();
         res
@@ -643,7 +629,7 @@ fn populate_env(
     {
         let func_env_map = &mut env.borrow_mut().values;
         for (name, val) in (args, values).zip() {
-            func_env_map.insert(name.clone(), val.downgrade(heap));
+            func_env_map.insert(name.clone(), val.downgrade());
         }
     }
     env
@@ -666,7 +652,7 @@ fn collect_function_definition_arguments(args: &[WeakVal]) -> Vec<SymbolId> {
 fn prepare_function_body(mut body: Vec<WeakVal>, heap: &mut Heap) -> RootedVal {
     assert!(!body.is_empty(), "function body cannot be empty");
     if body.len() == 1 {
-        body.pop().unwrap().upgrade(heap)
+        body.pop().unwrap().upgrade()
     } else {
         let mut inner = vec![WeakVal::Symbol(BuiltinSymbols::Begin as SymbolId)];
         let iter = body.into_iter().map(|x| x.clone());

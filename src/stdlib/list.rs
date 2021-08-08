@@ -1,6 +1,6 @@
 use crate::{
     native_module,
-    runtime::{drop_rooted_vec, RootedVal},
+    runtime::RootedVal,
 };
 
 use crate::runtime::RootedVal::*;
@@ -15,7 +15,6 @@ native_module! {
         } else {
             RootedVal::sym_false()
         };
-        drop_rooted_vec(&mut vm.heap, args);
         res
     };
 
@@ -25,7 +24,7 @@ native_module! {
     typed get_nth_elem(vm, List(val), NumberVal(index)) {
         let index = *index as usize;
         let elem = vm.heap.deref_ptr(val)[index].clone();
-        elem.upgrade(&mut vm.heap)
+        elem.upgrade()
     };
 
     typed get_len(vm, List(val)) =>
@@ -39,14 +38,14 @@ native_module! {
         let mut res = Vec::with_capacity(len);
         for i in 0..len {
             let item = vm.heap.deref_ptr(val)[i].clone();
-            let item = item.upgrade(&mut vm.heap);
+            let item = item.upgrade();
             res.push(vm.call(func, vec![item]));
         }
         RootedVal::list_from_rooted(res, &mut vm.heap)
     };
 
     typed push(vm, List(list), val) {
-        let val = val.clone(&mut vm.heap).downgrade(&mut vm.heap);
+        let val = val.clone().downgrade();
         vm.heap.deref_ptr_mut(list).push(val);
         RootedVal::none()
     };
@@ -54,7 +53,7 @@ native_module! {
     typed head(vm, List(val)) {
         assert!(!vm.heap.deref_ptr(val).is_empty(), "Cannot head on empty list");
         let val = vm.heap.deref_ptr(val)[0].clone();
-        val.upgrade(&mut vm.heap)
+        val.upgrade()
     };
 
     typed size(vm, List(val)) =>

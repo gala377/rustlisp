@@ -34,9 +34,7 @@ impl Vm {
         Func: FnOnce(&runtime::RootedVal, &gc::Heap) -> Res,
     {
         let val = self.interpreter.get_value(name)?;
-        let res = func(&val, &self.interpreter.heap);
-        val.heap_drop(&mut self.interpreter.heap);
-        Some(res)
+        Some(func(&val, &self.interpreter.heap))
     }
 
     pub fn interpret(&mut self, source: &str) {
@@ -50,14 +48,10 @@ impl Vm {
         let symbol_table = &mut self.interpreter.symbols;
         let AST { program } =
             reader::read(source, &mut self.interpreter.heap, symbol_table).unwrap();
-        let nil = runtime::RootedVal::NumberVal(0.0);
-        let last_rooted = program.iter().fold(nil, |last, expr| {
-            last.heap_drop(&mut self.interpreter.heap);
+        let last_rooted = program.iter().map(|expr| {
             self.interpreter.eval(&expr)
-        });
-        runtime::drop_rooted_vec(&mut self.interpreter.heap, program);
+        }).last().unwrap();
         let result = func(&last_rooted, &self.interpreter.heap);
-        last_rooted.heap_drop(&mut self.interpreter.heap);
         self.interpreter.run_gc();
         result
     }

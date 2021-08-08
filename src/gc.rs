@@ -150,11 +150,25 @@ impl<T> Root<T> {
 
     pub fn downgrade(self) -> Weak<T> {
         unsafe { self.ptr.as_ref().update_strong_count(|x| x - 1) };
-        Weak { ptr: self.ptr }
+        let res = Weak { ptr: self.ptr };
+        std::mem::forget(self);
+        res
     }
 }
 
 impl<T> Eq for Root<T> {}
+
+impl<T> Clone for Root<T> {
+    fn clone(&self) -> Self {
+        unsafe {
+            self.ptr.as_ref().update_strong_count(|x| x + 1);
+        }
+        Root {
+            ptr: self.ptr.clone(),
+            _phantom: PhantomData,
+        }
+    }
+}
 
 impl<T: ?Sized> ScopedRef<T> for Root<T> {
     fn scoped_ref<'a>(&'a self, _guard: &'a dyn ScopeGuard) -> &'a T {
@@ -208,10 +222,6 @@ pub struct Weak<T: ?Sized> {
 impl<T: ?Sized> Weak<T> {
     pub fn upgrade(self) -> Root<T> {
         unsafe {
-            assert!(
-                self.ptr.as_ref().strong_count.get() > 0,
-                "You cannot upgrade weak pointer that points to data with no roots"
-            );
             self.ptr.as_ref().update_strong_count(|x| x + 1);
             Root {
                 ptr: self.ptr,
@@ -583,39 +593,6 @@ impl Heap {
         Box::into_raw(ptr)
     }
 
-    pub fn clone_root<T: ?Sized>(&mut self, ptr: &Root<T>) -> Root<T> {
-        self.increment_strong_count(ptr.entry_index());
-        Root {
-            ptr: ptr.ptr.clone(),
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn clone_weak<T: ?Sized>(&mut self, ptr: &Weak<T>) -> Weak<T> {
-        ptr.clone()
-    }
-
-    pub fn downgrade<T: ?Sized>(&mut self, ptr: Root<T>) -> Weak<T> {
-        let weak = Weak {
-            ptr: ptr.ptr.clone(),
-        };
-        self.drop_root(ptr);
-        weak
-    }
-
-    pub fn upgrade<T: ?Sized>(&mut self, ptr: Weak<T>) -> Root<T> {
-        self.increment_strong_count(ptr.entry_index());
-        Root {
-            ptr: ptr.ptr,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn drop_root<T: ?Sized>(&mut self, ptr: Root<T>) {
-        self.decrement_strong_count(ptr.entry_index());
-        std::mem::forget(ptr);
-    }
-
     pub fn free_entry(&mut self, entry_index: usize) {
         // todo: test
         let entry = &mut self.entries[entry_index];
@@ -651,14 +628,6 @@ impl Heap {
             curr = self.entries[index].header.next_node;
         }
         self.entries[last_taken].header.next_node = next_taken_entry;
-    }
-
-    fn increment_strong_count(&mut self, entry_index: usize) {
-        self.entries[entry_index].modify_strong_count(|x| x + 1);
-    }
-
-    fn decrement_strong_count(&mut self, entry_index: usize) {
-        self.entries[entry_index].modify_strong_count(|x| x - 1);
     }
 }
 

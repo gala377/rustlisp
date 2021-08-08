@@ -1,7 +1,7 @@
 use crate::{
     env::{BuiltinSymbols, SymbolId, SymbolTable},
     gc::Heap,
-    runtime::{drop_rooted_vec, RootedVal},
+    runtime::RootedVal,
 };
 
 #[derive(Debug)]
@@ -90,16 +90,10 @@ where
                 let list_res = parse_list(&mut curr_atom, heap, symbol_table);
                 match list_res {
                     Ok(val) => prog.push(val),
-                    Err(err) => {
-                        drop_rooted_vec(heap, prog);
-                        return Err(err);
-                    }
+                    Err(err) => return Err(err),
                 }
             }
-            _ => {
-                drop_rooted_vec(heap, prog);
-                return Err(ParseError::UnexpectedAtom);
-            }
+            _ => return Err(ParseError::UnexpectedAtom),
         }
     }
     Ok(prog)
@@ -148,7 +142,6 @@ where
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table)?,
         });
     }
-    drop_rooted_vec(heap, list);
     Err(ParseError::UnclosedList)
 }
 

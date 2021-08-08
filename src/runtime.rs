@@ -84,6 +84,7 @@ impl Allocable for RuntimeFunc {
     }
 }
 
+#[derive(Clone)]
 pub enum RootedVal {
     // Copy types
     NumberVal(f64),
@@ -101,45 +102,33 @@ pub enum RootedVal {
 }
 
 impl RootedVal {
-    pub fn heap_drop(self, heap: &mut Heap) {
-        use RootedVal::*;
-        match self {
-            StringVal(x) => heap.drop_root(x),
-            List(x) => heap.drop_root(x),
-            Func(x) => heap.drop_root(x),
-            Lambda(x) => heap.drop_root(x),
-            UserType(x) => x.heap_drop(heap),
-            NumberVal(_) | Symbol(_) | NativeFunc(_) => (),
-        }
-    }
-
-    pub fn downgrade(self, heap: &mut Heap) -> WeakVal {
+    pub fn downgrade(self) -> WeakVal {
         use RootedVal::*;
         match self {
             NumberVal(x) => WeakVal::NumberVal(x),
             Symbol(x) => WeakVal::Symbol(x),
-            StringVal(x) => WeakVal::StringVal(heap.downgrade(x)),
-            List(x) => WeakVal::List(heap.downgrade(x)),
-            Func(x) => WeakVal::Func(heap.downgrade(x)),
+            StringVal(x) => WeakVal::StringVal(x.downgrade()),
+            List(x) => WeakVal::List(x.downgrade()),
+            Func(x) => WeakVal::Func(x.downgrade()),
             NativeFunc(x) => WeakVal::NativeFunc(x),
-            UserType(x) => WeakVal::UserType(x.downgrade(heap)),
-            Lambda(x) => WeakVal::Lambda(heap.downgrade(x)),
+            UserType(x) => WeakVal::UserType(x.downgrade()),
+            Lambda(x) => WeakVal::Lambda(x.downgrade()),
         }
     }
 
-    pub fn clone(&self, heap: &mut Heap) -> RootedVal {
-        use RootedVal::*;
-        match self {
-            StringVal(x) => StringVal(heap.clone_root(x)),
-            List(x) => List(heap.clone_root(x)),
-            Func(x) => Func(heap.clone_root(x)),
-            Lambda(x) => Lambda(heap.clone_root(x)),
-            NumberVal(x) => NumberVal(*x),
-            Symbol(x) => Symbol(*x),
-            NativeFunc(x) => NativeFunc(Rc::clone(x)),
-            UserType(x) => UserType(x.clone(heap)),
-        }
-    }
+    // pub fn clone(&self) -> RootedVal {
+    //     use RootedVal::*;
+    //     match self {
+    //         StringVal(x) => StringVal(x.clone()),
+    //         List(x) => List(x.clone()),
+    //         Func(x) => Func(x.clone()),
+    //         Lambda(x) => Lambda(x.clone()),
+    //         NumberVal(x) => NumberVal(*x),
+    //         Symbol(x) => Symbol(*x),
+    //         NativeFunc(x) => NativeFunc(x.clone()),
+    //         UserType(x) => UserType(x.clone()),
+    //     }
+    // }
 
     pub fn nil(heap: &mut Heap) -> RootedVal {
         let inner = heap.allocate(Vec::new());
@@ -206,7 +195,7 @@ impl RootedVal {
     pub fn list_from_rooted(val: Vec<RootedVal>, heap: &mut Heap) -> RootedVal {
         let mut inner: Root<Vec<WeakVal>> = heap.allocate(Vec::new());
         check_ptr!(heap, inner);
-        let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade(heap)).collect();
+        let val: Vec<WeakVal> = val.into_iter().map(|x| x.downgrade()).collect();
         heap.deref_ptr_mut(&mut inner).extend(val.into_iter());
         Self::List(inner)
     }
@@ -282,17 +271,17 @@ pub enum WeakVal {
 }
 
 impl WeakVal {
-    pub fn upgrade(self, heap: &mut Heap) -> RootedVal {
+    pub fn upgrade(self) -> RootedVal {
         use WeakVal::*;
         match self {
             NumberVal(x) => RootedVal::NumberVal(x),
             Symbol(x) => RootedVal::Symbol(x),
-            StringVal(x) => RootedVal::StringVal(heap.upgrade(x)),
-            List(x) => RootedVal::List(heap.upgrade(x)),
-            Func(x) => RootedVal::Func(heap.upgrade(x)),
+            StringVal(x) => RootedVal::StringVal(x.upgrade()),
+            List(x) => RootedVal::List(x.upgrade()),
+            Func(x) => RootedVal::Func(x.upgrade()),
             NativeFunc(x) => RootedVal::NativeFunc(x),
-            Lambda(x) => RootedVal::Lambda(heap.upgrade(x)),
-            UserType(x) => RootedVal::UserType(x.upgrade(heap)),
+            Lambda(x) => RootedVal::Lambda(x.upgrade()),
+            UserType(x) => RootedVal::UserType(x.upgrade()),
         }
     }
 
@@ -376,8 +365,4 @@ impl WeakVal {
             _ => "Not supported".into(),
         }
     }
-}
-
-pub fn drop_rooted_vec(heap: &mut Heap, vec: Vec<RootedVal>) {
-    vec.into_iter().for_each(|x| x.heap_drop(heap));
 }
