@@ -150,9 +150,7 @@ impl<T> Root<T> {
 
     pub fn downgrade(self) -> Weak<T> {
         unsafe { self.ptr.as_ref().update_strong_count(|x| x - 1) };
-        Weak {
-            ptr: self.ptr,
-        }
+        Weak { ptr: self.ptr }
     }
 }
 
@@ -193,7 +191,10 @@ impl<T: ?Sized> HeapMarked for Root<T> {
 impl<T: ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
         unsafe {
-            assert!(self.ptr.as_ref().strong_count.get() > 0, "Dropping root ptr with 0 strong count");
+            assert!(
+                self.ptr.as_ref().strong_count.get() > 0,
+                "Dropping root ptr with 0 strong count"
+            );
             self.ptr.as_ref().update_strong_count(|x| x - 1)
         }
     }
@@ -207,7 +208,10 @@ pub struct Weak<T: ?Sized> {
 impl<T: ?Sized> Weak<T> {
     pub fn upgrade(self) -> Root<T> {
         unsafe {
-            assert!(self.ptr.as_ref().strong_count.get()  > 0, "You cannot upgrade weak pointer that points to data with no roots");
+            assert!(
+                self.ptr.as_ref().strong_count.get() > 0,
+                "You cannot upgrade weak pointer that points to data with no roots"
+            );
             self.ptr.as_ref().update_strong_count(|x| x + 1);
             Root {
                 ptr: self.ptr,
@@ -354,7 +358,7 @@ impl HeapEntry {
                 debug_assert!(data_ptr.as_ref().strong_count.get() == 0);
                 self.drop_data_unchecked();
                 self.data = None;
-            }
+            },
         }
     }
 
@@ -371,14 +375,14 @@ impl HeapEntry {
     pub fn strong_count(&self) -> usize {
         match self.data {
             None => panic!("Checking strong count of empty entry"),
-            Some(data_ptr) => unsafe { data_ptr.as_ref().strong_count.get() }
+            Some(data_ptr) => unsafe { data_ptr.as_ref().strong_count.get() },
         }
     }
 
     pub fn modify_strong_count<F: FnMut(usize) -> usize>(&self, func: F) {
         match self.data {
             None => panic!("Modifying strong count on empty entry is an error"),
-            Some(data_ptr) => unsafe { data_ptr.as_ref().update_strong_count(func) }
+            Some(data_ptr) => unsafe { data_ptr.as_ref().update_strong_count(func) },
         }
     }
 }
@@ -395,7 +399,7 @@ impl Drop for HeapEntry {
             Some(data_ptr) => unsafe {
                 debug_assert!(data_ptr.as_ref().strong_count.get() == 0);
                 self.drop_data_unchecked()
-            }
+            },
         }
     }
 }
@@ -473,10 +477,9 @@ impl Heap {
         let entry_index = self.insert_entry(entry);
         let data = Self::heap_allocate(val, entry_index);
 
-
         let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut RawPtrBox<()>) };
         self.entries[entry_index].data = Some(ptr.clone());
-        unsafe { (*data).strong_count.set(1) } ;
+        unsafe { (*data).strong_count.set(1) };
         Root {
             ptr: unsafe { ptr::NonNull::new_unchecked(data) },
             _phantom: PhantomData,
