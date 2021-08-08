@@ -193,6 +193,7 @@ impl<T: ?Sized> HeapMarked for Root<T> {
 impl<T: ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
         unsafe {
+            assert!(self.ptr.as_ref().strong_count.get() > 0, "Dropping root ptr with 0 strong count");
             self.ptr.as_ref().update_strong_count(|x| x - 1)
         }
     }
