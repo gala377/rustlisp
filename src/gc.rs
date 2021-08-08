@@ -105,6 +105,7 @@ pub unsafe trait ScopeGuard {}
 #[repr(C)]
 pub struct RawPtrBox<T: ?Sized> {
     pub entry_index: usize,
+    pub strong_count: Cell<usize>,
     pub value: UnsafeCell<T>,
 }
 
@@ -250,8 +251,6 @@ pub struct Header {
     pub tag: TypeTag,
     pub marked: Cell<bool>,
     pub next_node: Option<usize>,
-    pub strong_count: usize,
-    pub weak_count: usize,
     pub dropped: bool,
     pub vptr: Option<&'static VirtualTable>,
 }
@@ -263,8 +262,6 @@ impl Header {
             tag: TypeTag::None,
             marked: Cell::new(false),
             next_node: None,
-            strong_count: 0,
-            weak_count: 0,
             dropped: false,
             vptr: None,
         }
@@ -275,8 +272,6 @@ impl Header {
             tag: TypeTag::None,
             marked: Cell::new(false),
             next_node: next,
-            strong_count: 0,
-            weak_count: 0,
             dropped: false,
             vptr: None,
         }
@@ -322,11 +317,14 @@ impl HeapEntry {
         if let None = self.data {
             panic!("Free of an empty heap entry");
         }
-        debug_assert!(self.header.strong_count == 0);
-        unsafe {
-            self.drop_data_unchecked();
+        match self.data {
+            None => panic!("Free of an empty heap entry"),
+            Some(data_ptr) => unsafe {
+                debug_assert!(data_ptr.as_ref().strong_count.get() == 0);
+                self.drop_data_unchecked();
+                self.data = None;
+            }
         }
-        self.data = None;
     }
 
     pub unsafe fn data_ref<T>(&self) -> &T {
@@ -338,6 +336,24 @@ impl HeapEntry {
         let ptr = ptr.as_ptr() as *const RawPtrBox<T>;
         &*(*ptr).value.get()
     }
+
+    pub fn strong_count(&self) -> usize {
+        match self.data {
+            None => panic!("Checking strong count of empty entry"),
+            Some(data_ptr) => unsafe { data_ptr.as_ref().strong_count.get() }
+        }
+    }
+
+    pub fn modify_strong_count<F: FnMut(usize) -> usize>(&self, mut func: F) {
+        match self.data {
+            None => panic!("Modifying strong count on empty entry is an error"),
+            Some(data_ptr) => unsafe {
+                let old_val = data_ptr.as_ref().strong_count.get();
+                let new_val = func(old_val);
+                data_ptr.as_ref().strong_count.set(new_val);
+            }
+        }
+    }
 }
 
 unsafe fn safe_drop_and_free<T>(ptr: *mut RawPtrBox<()>) {
@@ -347,8 +363,13 @@ unsafe fn safe_drop_and_free<T>(ptr: *mut RawPtrBox<()>) {
 
 impl Drop for HeapEntry {
     fn drop(&mut self) {
-        debug_assert!(self.header.strong_count == 0);
-        unsafe { self.drop_data_unchecked() }
+        match self.data {
+            None => (),
+            Some(data_ptr) => unsafe {
+                debug_assert!(data_ptr.as_ref().strong_count.get() == 0);
+                self.drop_data_unchecked()
+            }
+        }
     }
 }
 
@@ -418,8 +439,6 @@ impl Heap {
             size: std::mem::size_of::<T>(),
             tag: T::tag(),
             next_node: self.first_taken,
-            strong_count: 1,
-            weak_count: 0,
             dropped: false,
             vptr,
         };
@@ -427,8 +446,10 @@ impl Heap {
         let entry_index = self.insert_entry(entry);
         let data = Self::heap_allocate(val, entry_index);
 
+
         let ptr = unsafe { ptr::NonNull::new_unchecked(data as *mut RawPtrBox<()>) };
         self.entries[entry_index].data = Some(ptr.clone());
+        unsafe { (*data).strong_count.set(1) } ;
         Root {
             ptr: unsafe { ptr::NonNull::new_unchecked(data) },
             _phantom: PhantomData,
@@ -526,6 +547,7 @@ impl Heap {
     fn heap_allocate<T>(val: T, entry_index: usize) -> *mut RawPtrBox<T> {
         let ptr = Box::new(RawPtrBox {
             entry_index,
+            strong_count: Cell::new(0),
             value: UnsafeCell::new(val),
         });
         Box::into_raw(ptr)
@@ -567,7 +589,7 @@ impl Heap {
     pub fn free_entry(&mut self, entry_index: usize) {
         // todo: test
         let entry = &mut self.entries[entry_index];
-        debug_assert_eq!(entry.header.strong_count, 0, "freeing rooted value");
+        debug_assert_eq!(entry.strong_count(), 0, "freeing rooted value");
         debug_assert!(!entry.header.dropped, "double free");
 
         entry.drop_data();
@@ -602,11 +624,11 @@ impl Heap {
     }
 
     fn increment_strong_count(&mut self, entry_index: usize) {
-        self.with_header(entry_index, |header| header.strong_count += 1);
+        self.entries[entry_index].modify_strong_count(|x| x + 1);
     }
 
     fn decrement_strong_count(&mut self, entry_index: usize) {
-        self.with_header(entry_index, |header| header.strong_count -= 1);
+        self.entries[entry_index].modify_strong_count(|x| x - 1);
     }
 
     fn with_header<F: Fn(&mut Header) -> ()>(&mut self, entry_index: usize, func: F) {
@@ -686,7 +708,7 @@ impl MarkSweep {
                     last_n.remove(0);
                 }
             }
-            if heap.entries[entry_index].header.strong_count > 0 {
+            if heap.entries[entry_index].strong_count() > 0 {
                 self.visit_entry(&mut marked, heap, entry_index);
             }
             curr = heap.entries[entry_index].header.next_node;
