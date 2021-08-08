@@ -95,11 +95,20 @@ pub trait HeapMarked {
 /// undefined behavior.
 pub unsafe trait ScopeGuard {}
 
+/// Represents allocated value alongside header information.
+/// 
+/// repr(C) is required here because we always want to have header information
+/// layed out the same way starting from the beginning of the struct
+/// regardless of the contained type. This way the alignment of the struct
+/// might change, but the offsets from the start to all of the fields can't
+/// So we can safely access header information on erased types.
+#[repr(C)]
 pub struct RawPtrBox<T: ?Sized> {
     pub entry_index: usize,
     pub value: UnsafeCell<T>,
 }
 
+#[repr(transparent)]
 pub struct Root<T: ?Sized> {
     ptr: ptr::NonNull<RawPtrBox<T>>,
     _phantom: PhantomData<T>,
@@ -171,6 +180,7 @@ impl<T: ?Sized> Drop for Root<T> {
     }
 }
 
+#[repr(transparent)]
 pub struct Weak<T: ?Sized> {
     data: ptr::NonNull<RawPtrBox<T>>,
 }

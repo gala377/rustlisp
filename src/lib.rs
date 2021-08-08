@@ -62,3 +62,9 @@ impl Vm {
         result
     }
 }
+
+impl Drop for Vm {
+    fn drop(&mut self) {
+        self.run_gc();
+    }
+}
