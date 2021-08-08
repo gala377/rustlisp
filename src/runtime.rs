@@ -116,20 +116,6 @@ impl RootedVal {
         }
     }
 
-    // pub fn clone(&self) -> RootedVal {
-    //     use RootedVal::*;
-    //     match self {
-    //         StringVal(x) => StringVal(x.clone()),
-    //         List(x) => List(x.clone()),
-    //         Func(x) => Func(x.clone()),
-    //         Lambda(x) => Lambda(x.clone()),
-    //         NumberVal(x) => NumberVal(*x),
-    //         Symbol(x) => Symbol(*x),
-    //         NativeFunc(x) => NativeFunc(x.clone()),
-    //         UserType(x) => UserType(x.clone()),
-    //     }
-    // }
-
     pub fn nil(heap: &mut Heap) -> RootedVal {
         let inner = heap.allocate(Vec::new());
         RootedVal::List(inner)
