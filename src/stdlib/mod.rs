@@ -340,7 +340,8 @@ fn deep_equal_impl(vm: &mut Interpreter, a: &RootedVal, b: &RootedVal) -> bool {
                 for i in 0..len_a {
                     let (elem_a, elem_b) = (
                         vm.get_ref(a)[i].clone().upgrade(),
-                        vm.get_ref(b)[i].clone().upgrade());
+                        vm.get_ref(b)[i].clone().upgrade(),
+                    );
                     res = deep_equal_impl(vm, &elem_a, &elem_b);
                     if !res {
                         break;

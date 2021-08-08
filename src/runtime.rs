@@ -116,6 +116,10 @@ impl RootedVal {
         }
     }
 
+    pub fn as_weak(&self) -> WeakVal {
+        self.clone().downgrade()
+    }
+
     pub fn nil(heap: &mut Heap) -> RootedVal {
         let inner = heap.allocate(Vec::new());
         RootedVal::List(inner)

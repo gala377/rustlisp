@@ -252,13 +252,8 @@ impl Interpreter {
             Pattern::Function { name, args, body } => {
                 let body = prepare_function_body(body, &mut self.heap);
                 let globals = self.get_globals();
-                let function = RootedVal::function(
-                    name,
-                    args,
-                    body.downgrade(),
-                    globals,
-                    &mut self.heap,
-                );
+                let function =
+                    RootedVal::function(name, args, body.downgrade(), globals, &mut self.heap);
                 create_env
                     .borrow_mut()
                     .values
@@ -285,13 +280,7 @@ impl Interpreter {
             _ => panic!("not a lambda form"),
         };
         let body = prepare_function_body(body, &mut self.heap);
-        RootedVal::lambda(
-            locals,
-            args,
-            body.downgrade(),
-            globals,
-            &mut self.heap,
-        )
+        RootedVal::lambda(locals, args, body.downgrade(), globals, &mut self.heap)
     }
 
     fn eval_begin<Ptr>(&mut self, vals: &Ptr) -> RootedVal
@@ -415,7 +404,10 @@ impl Interpreter {
             "while expr needs at least 2 clauses"
         );
         let cond = self.get_ref(expr)[1].clone();
-        while self.eval_weak(&cond).is_symbol(BuiltinSymbols::True as usize) {
+        while self
+            .eval_weak(&cond)
+            .is_symbol(BuiltinSymbols::True as usize)
+        {
             map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
         }
         RootedVal::none()
@@ -436,7 +428,7 @@ impl Interpreter {
                     let mut env = env.clone();
                     found = loop {
                         if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
-                            let val = val.clone().downgrade();
+                            let val = val.as_weak();
                             *env_entry = val;
                             break true;
                         };
@@ -450,7 +442,7 @@ impl Interpreter {
                 if !found {
                     match self.get_globals().borrow_mut().values.get_mut(inner) {
                         Some(env_entry) => {
-                            let val = val.clone().downgrade();
+                            let val = val.as_weak();
                             *env_entry = val;
                         }
                         None => panic!("Trying to set! not defined location"),
@@ -475,7 +467,7 @@ impl Interpreter {
                 if index >= len {
                     panic!("Trying to set list location past its size")
                 }
-                let val = val.clone().downgrade();
+                let val = val.as_weak();
                 self.get_mut(&mut list)[index] = val;
             }
             _ => panic!("Invalid set!"),

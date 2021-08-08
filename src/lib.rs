@@ -48,9 +48,11 @@ impl Vm {
         let symbol_table = &mut self.interpreter.symbols;
         let AST { program } =
             reader::read(source, &mut self.interpreter.heap, symbol_table).unwrap();
-        let last_rooted = program.iter().map(|expr| {
-            self.interpreter.eval(&expr)
-        }).last().unwrap();
+        let last_rooted = program
+            .iter()
+            .map(|expr| self.interpreter.eval(&expr))
+            .last()
+            .unwrap();
         let result = func(&last_rooted, &self.interpreter.heap);
         self.interpreter.run_gc();
         result

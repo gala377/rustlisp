@@ -1,7 +1,4 @@
-use crate::{
-    native_module,
-    runtime::RootedVal,
-};
+use crate::{native_module, runtime::RootedVal};
 
 use crate::runtime::RootedVal::*;
 
@@ -45,7 +42,7 @@ native_module! {
     };
 
     typed push(vm, List(list), val) {
-        let val = val.clone().downgrade();
+        let val = val.as_weak();
         vm.heap.deref_ptr_mut(list).push(val);
         RootedVal::none()
     };
