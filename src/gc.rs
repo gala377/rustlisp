@@ -109,6 +109,14 @@ pub struct RawPtrBox<T: ?Sized> {
     pub value: UnsafeCell<T>,
 }
 
+impl<T: ?Sized> RawPtrBox<T> {
+    pub fn update_strong_count<F: FnMut(usize) -> usize>(&self, mut func: F) {
+        let old_val = self.strong_count.get();
+        let new_val = func(old_val);
+        self.strong_count.set(new_val);
+    }
+}
+
 #[repr(transparent)]
 pub struct Root<T: ?Sized> {
     ptr: ptr::NonNull<RawPtrBox<T>>,
@@ -138,6 +146,13 @@ impl<T> Root<T> {
         };
         std::mem::forget(self);
         new_ptr
+    }
+
+    pub fn downgrade(self) -> Weak<T> {
+        unsafe { self.ptr.as_ref().update_strong_count(|x| x - 1) };
+        Weak {
+            ptr: self.ptr,
+        }
     }
 }
 
@@ -177,18 +192,33 @@ impl<T: ?Sized> HeapMarked for Root<T> {
 
 impl<T: ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
-        panic!("Root should always be manually dropped");
+        unsafe {
+            self.ptr.as_ref().update_strong_count(|x| x - 1)
+        }
     }
 }
 
 #[repr(transparent)]
 pub struct Weak<T: ?Sized> {
-    data: ptr::NonNull<RawPtrBox<T>>,
+    ptr: ptr::NonNull<RawPtrBox<T>>,
+}
+
+impl<T: ?Sized> Weak<T> {
+    pub fn upgrade(self) -> Root<T> {
+        unsafe {
+            assert!(self.ptr.as_ref().strong_count.get()  > 0, "You cannot upgrade weak pointer that points to data with no roots");
+            self.ptr.as_ref().update_strong_count(|x| x + 1);
+            Root {
+                ptr: self.ptr,
+                _phantom: PhantomData,
+            }
+        }
+    }
 }
 
 impl<T> PartialEq for Weak<T> {
     fn eq(&self, other: &Self) -> bool {
-        self.data == other.data
+        self.ptr == other.ptr
     }
 }
 
@@ -208,7 +238,7 @@ impl<T: ?Sized> ScopedRef<T> for Weak<T> {
         //
         // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
         // tracked containers.
-        unsafe { &*self.data.as_ref().value.get() }
+        unsafe { &*self.ptr.as_ref().value.get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
@@ -224,20 +254,20 @@ impl<T: ?Sized> ScopedRef<T> for Weak<T> {
         //
         // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
         // tracked containers.
-        unsafe { &mut *self.data.as_ref().value.get() }
+        unsafe { &mut *self.ptr.as_ref().value.get() }
     }
 }
 
 impl<T: ?Sized> HeapMarked for Weak<T> {
     fn entry_index(&self) -> usize {
-        unsafe { self.data.as_ref().entry_index }
+        unsafe { self.ptr.as_ref().entry_index }
     }
 }
 
 impl<T: ?Sized> Clone for Weak<T> {
     fn clone(&self) -> Self {
         Self {
-            data: self.data.clone(),
+            ptr: self.ptr.clone(),
         }
     }
 }
@@ -344,14 +374,10 @@ impl HeapEntry {
         }
     }
 
-    pub fn modify_strong_count<F: FnMut(usize) -> usize>(&self, mut func: F) {
+    pub fn modify_strong_count<F: FnMut(usize) -> usize>(&self, func: F) {
         match self.data {
             None => panic!("Modifying strong count on empty entry is an error"),
-            Some(data_ptr) => unsafe {
-                let old_val = data_ptr.as_ref().strong_count.get();
-                let new_val = func(old_val);
-                data_ptr.as_ref().strong_count.set(new_val);
-            }
+            Some(data_ptr) => unsafe { data_ptr.as_ref().update_strong_count(func) }
         }
     }
 }
@@ -567,7 +593,7 @@ impl Heap {
 
     pub fn downgrade<T: ?Sized>(&mut self, ptr: Root<T>) -> Weak<T> {
         let weak = Weak {
-            data: ptr.ptr.clone(),
+            ptr: ptr.ptr.clone(),
         };
         self.drop_root(ptr);
         weak
@@ -576,7 +602,7 @@ impl Heap {
     pub fn upgrade<T: ?Sized>(&mut self, ptr: Weak<T>) -> Root<T> {
         self.increment_strong_count(ptr.entry_index());
         Root {
-            ptr: ptr.data,
+            ptr: ptr.ptr,
             _phantom: PhantomData,
         }
     }
@@ -629,11 +655,6 @@ impl Heap {
 
     fn decrement_strong_count(&mut self, entry_index: usize) {
         self.entries[entry_index].modify_strong_count(|x| x - 1);
-    }
-
-    fn with_header<F: Fn(&mut Header) -> ()>(&mut self, entry_index: usize, func: F) {
-        let header = &mut self.entries[entry_index].header;
-        func(header);
     }
 }
 
