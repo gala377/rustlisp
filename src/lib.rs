@@ -52,7 +52,7 @@ impl Vm {
             .into_iter()
             .map(|expr| self.interpreter.eval(&expr))
             .last()
-            .unwrap();
+            .unwrap_or_else(runtime::RootedVal::none);
         let result = func(&last_rooted, &self.interpreter.heap);
         drop(last_rooted);
         self.interpreter.run_gc();

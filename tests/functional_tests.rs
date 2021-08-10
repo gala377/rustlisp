@@ -12,5 +12,8 @@ macro_rules! functional_tests {
 }
 
 functional_tests! {
+    empty_file_test,
     lambda_captures_local_vars,
+    equal_function_test,
+    assert_implementations_test,
 }

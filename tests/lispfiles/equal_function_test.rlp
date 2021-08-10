@@ -1,0 +1,26 @@
+
+(def my-list '(1 2 3))
+(def my-string "my-string")
+(def my-lambda (lambda () '()))
+(def (simple-func a b) (+ a b))
+
+
+(assert-true (eq? 1 1) "this passes")
+(assert-true (eq? my-list my-list) "this passes")
+(assert-true (eq? my-string my-string) "this passes")
+(assert-true (eq? my-lambda my-lambda) "this passes")
+(assert-true (eq? simple-func simple-func) "this passes")
+(assert-true (eq? assert assert) "this passes")
+(assert-true (eq? "my-string" my-string) "this passes")
+(assert-true (eq? 'some-sym 'some-sym) "this passes")
+
+(assert-true (equal? '(1 2 3) '(1 2 3)) "this passes")
+(assert-true (equal? '(1 2 (1 2 a (b 2 3))) '(1 2 (1 2 a (b 2 3)))) "This passes")
+(assert-true (equal? 1 1) "this passes")
+(assert-true (equal? my-list my-list) "this passes")
+(assert-true (equal? my-string my-string) "this passes")
+(assert-true (equal? my-lambda my-lambda) "this passes")
+(assert-true (equal? simple-func simple-func) "this passes")
+(assert-true (equal? assert assert) "this passes")
+(assert-true (equal? "my-string" my-string) "this passes")
+(assert-true (equal? 'some-sym 'some-sym) "this passes")

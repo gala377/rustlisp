@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use crate::{
     check_ptr,
@@ -103,6 +103,14 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
                 [NumberVal(a), NumberVal(b)] => RootedVal::predicate(a == b),
                 [List(a), List(b)] => RootedVal::predicate(a == b),
                 [Lambda(a), Lambda(b)] => RootedVal::predicate(a == b),
+                [Func(a), Func(b)] => RootedVal::predicate(a == b),
+                [NativeFunc(a), NativeFunc(b)] => RootedVal::predicate(Rc::as_ptr(a) == Rc::as_ptr(b)),
+                [NativeFunc(_), Func(_)] => RootedVal::sym_false(),
+                [Func(_), NativeFunc(_)] => RootedVal::sym_false(),
+                [Func(_), Lambda(_)] => RootedVal::sym_false(),
+                [Lambda(_), Func(_)] => RootedVal::sym_false(),
+                [Lambda(_), NativeFunc(_)] => RootedVal::sym_false(),
+                [NativeFunc(_), Lambda(_)] => RootedVal::sym_false(),
                 _ => panic!("Can only compare 2 values of the same type"),
         },
         "equal?" => deep_eq,
@@ -116,6 +124,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
             assert!(args.len() == 1, "function str accepts only one parameter");
             RootedVal::string(args[0].str(&mut vm.heap, &mut vm.symbols), &mut vm.heap)
         },
+        "not" => not_impl,
 
         // functions
         "apply" => |vm, mut args: Vec<RootedVal>| {
@@ -170,6 +179,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "__load" => load::load_from_file_without_std_env_runtime_wrapper,
         "assert" => assert_impl,
         "assert-equal" => assert_equal_impl,
+        "assert-true" => assert_true_impl,
         "print-globals" => print_globals,
     });
 }
@@ -235,6 +245,15 @@ native_module! {
             }
             _ => panic!("Assertion failed with unknown message"),
         }
+    };
+
+    typed assert_true_impl(vm, Symbol(s), StringVal(msg)) {
+        if *s != BuiltinSymbols::True as usize {
+            let eq_msg = format!("{} is not true", &vm.symbols[*s]);
+            let msg = vm.heap.deref_ptr(msg).clone();
+            panic!("{} ({})", msg, eq_msg);
+        }
+        RootedVal::none()
     };
 
     plus(vm, args) {
@@ -305,6 +324,16 @@ native_module! {
 
     typed deep_eq(vm, a, b) {
         RootedVal::predicate(deep_equal_impl(vm, a, b))
+    };
+
+    typed not_impl(vm, Symbol(s)) {
+        if *s == BuiltinSymbols::True as usize {
+            return RootedVal::sym_false();
+        }
+        if *s == BuiltinSymbols::False as usize {
+            return RootedVal::sym_true();
+        }
+        panic!("Not only works on #t and #f")
     };
 }
 
