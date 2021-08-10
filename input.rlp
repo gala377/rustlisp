@@ -97,7 +97,9 @@
             (let ((w 5))
                 (lambda () (+ x y z w))
             ))))
-(assert ((let-with-lambda)) 14 "Let with lambda failed")
+(std/testing/assert-eq? ((let-with-lambda)) 14 "Let with lambda failed")
+
+(print "experimenting with native types")
 
 (def counter (experiment-counter 0))
 (def (int-add c) (dispatch! c "inc" '()))

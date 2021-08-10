@@ -1,0 +1,20 @@
+(__load "stdlib/defines.rlp")
+
+(def (std/testing/assert pred msg)
+    (if pred
+        none
+        (panic! msg)))
+
+(def (std/testing/assert-equal? a b msg)
+    (if (equal? a b)
+        none
+        (let ((eq-msg (+ (to-str a) " != " (to-str b))))
+            (let ((final-msg (+ msg ": " eq-msg)))
+                (panic! final-msg)))))
+
+(def (std/testing/assert-eq? a b msg)
+    (if (eq? a b)
+        none
+        (let ((eq-msg (+ (to-str a) " != " (to-str b))))
+            (let ((final-msg (+ msg ": " eq-msg)))
+                (panic! final-msg)))))

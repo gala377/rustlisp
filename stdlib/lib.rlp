@@ -2,3 +2,4 @@
 (__load "stdlib/collections.rlp")
 (__load "stdlib/numeric.rlp")
 (__load "stdlib/rec.rlp")
+(__load "stdlib/testing.rlp")

@@ -181,6 +181,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "assert-equal" => assert_equal_impl,
         "assert-true" => assert_true_impl,
         "print-globals" => print_globals,
+        "panic!" => panic_impl,
     });
 }
 
@@ -334,6 +335,10 @@ native_module! {
             return RootedVal::sym_true();
         }
         panic!("Not only works on #t and #f")
+    };
+
+    typed panic_impl(vm, val) {
+        panic!("{}", val.str(&vm.heap, &vm.symbols))
     };
 }
 
