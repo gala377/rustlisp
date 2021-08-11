@@ -2,3 +2,9 @@
 (def #f '#f)
 (def nil '())
 (def none 'none)
+
+(macro (when arg body)
+  `(if ,arg ,body none))
+
+(macro (unless arg body)
+  `(if ,arg none ,body))

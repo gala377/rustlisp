@@ -3,7 +3,8 @@
 
 (macro (-> arg funcs)
   (def (insert-1 l v)
-    (if (list? l) none (set! l (list l)))
+    (unless (list? l)
+      (set! l (list l)))
     (+ (list (head l) v) (tail l)))
   (def curr-call (insert-1 (head funcs) arg))
   (def len (length funcs))
@@ -15,7 +16,8 @@
 
 (macro (->> arg funcs)
   (def (push-arg l v)
-    (if (list? l) none (set! l (list l)))
+    (unless (list? l)
+      (set! l (list l)))
     (append l v))
   (def curr-call (push-arg (head funcs) arg))
   (def len (length funcs))
