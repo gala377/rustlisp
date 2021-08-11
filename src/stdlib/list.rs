@@ -49,9 +49,6 @@ native_module! {
         vm.heap.deref_ptr(val)[0].as_root()
     };
 
-    typed size(vm, List(val)) =>
-        RootedVal::NumberVal(vm.heap.deref_ptr(val).len() as f64);
-
     typed copy(vm, List(val)) =>
         RootedVal::list((*vm.get_ref(val)).clone(), &mut vm.heap);
 

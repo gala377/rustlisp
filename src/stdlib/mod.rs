@@ -144,7 +144,6 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "append" => list::append,
         "copy" => list::copy,
         "push!" => list::push,
-        "size" => list::size,
         "head" => list::head,
         "tail" => |vm, mut args| {
             assert_eq!(args.len(), 1, "tail takes one argument");

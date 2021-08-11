@@ -4,7 +4,7 @@
 (def (std/coll/empty) '())
 
 (def (std/coll/map func values)
-    (def length (size values))
+    (def length (length values))
     (def result '())
     (def i 0)
     (while (less-than i length)

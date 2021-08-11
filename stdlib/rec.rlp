@@ -13,8 +13,8 @@
 
 (def (std/rec/map func values)
     (def (map func values acc)
-        (def i (size acc))
-        (if (eq? i (size values))
+        (def i (length acc))
+        (if (eq? i (length values))
             acc
             (begin
                 (def mapped (func (nth values i)))
