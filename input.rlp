@@ -126,3 +126,16 @@
 (p-c)
 (add-n 50)
 (p-c)
+
+(print "Threading macro test")
+
+(print (-> "hello" (
+    (+ " world")
+    (+ " world again")
+    (list 1 2 3)
+    to-str
+)))
+
+(def (my-foo a b) (list a b 3 4))
+
+(std/testing/assert-equal? '(1 2 3 4) (my-foo 1 2) "this should pass")

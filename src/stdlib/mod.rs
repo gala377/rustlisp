@@ -141,6 +141,8 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "nth" => list::get_nth_elem,
         "length" => list::get_len,
         "map" => list::map,
+        "append" => list::append,
+        "copy" => list::copy,
         "push!" => list::push,
         "size" => list::size,
         "head" => list::head,

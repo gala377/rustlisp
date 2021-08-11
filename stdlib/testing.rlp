@@ -1,20 +1,23 @@
 (__load "stdlib/defines.rlp")
 
-(def (std/testing/assert pred msg)
-    (if pred
+(macro (std/testing/assert pred msg)
+    `(if ,pred
         none
-        (panic! msg)))
+        (let ((obj-msg ,(to-str pred)))
+          (panic! (+ obj-msg "is False:" ,msg)))))
 
-(def (std/testing/assert-equal? a b msg)
-    (if (equal? a b)
+(macro (std/testing/assert-equal? a b msg)
+    `(if (equal? ,a ,b)
         none
-        (let ((eq-msg (+ (to-str a) " != " (to-str b))))
-            (let ((final-msg (+ msg ": " eq-msg)))
+        (let ((obj-repr ,(+ (to-str a) "!=" (to-str b)))
+              (eq-msg (+ (to-str ,a) "!=" (to-str ,b))))
+            (let ((final-msg (+ ,msg ": " obj-repr " " eq-msg)))
                 (panic! final-msg)))))
 
-(def (std/testing/assert-eq? a b msg)
-    (if (eq? a b)
+(macro (std/testing/assert-eq? a b msg)
+    `(if (eq? ,a ,b)
         none
-        (let ((eq-msg (+ (to-str a) " != " (to-str b))))
-            (let ((final-msg (+ msg ": " eq-msg)))
+        (let ((obj-repr ,(+ (to-str a) "!=" (to-str b)))
+              (eq-msg (+ (to-str ,a) "!=" (to-str ,b))))
+            (let ((final-msg (+ ,msg ":" obj-repr " " eq-msg)))
                 (panic! final-msg)))))

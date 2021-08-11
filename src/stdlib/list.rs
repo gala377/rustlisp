@@ -52,4 +52,12 @@ native_module! {
     typed size(vm, List(val)) =>
         RootedVal::NumberVal(vm.heap.deref_ptr(val).len() as f64);
 
+    typed copy(vm, List(val)) =>
+        RootedVal::list((*vm.get_ref(val)).clone(), &mut vm.heap);
+
+    typed append(vm, List(val), arg) => {
+        let mut new_list = (&*vm.get_ref(val)).clone();
+        new_list.push(arg.as_weak());
+        RootedVal::list(new_list, &mut vm.heap)
+    };
 }
