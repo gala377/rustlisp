@@ -197,6 +197,7 @@ impl Interpreter {
         };
         match symbol.try_into() {
             Ok(BuiltinSymbols::Define) => Ok(self.eval_define(vals)),
+            Ok(BuiltinSymbols::Macro) => Ok(self.eval_macro(vals)),
             Ok(BuiltinSymbols::Begin) => Ok(self.eval_begin(vals)),
             Ok(BuiltinSymbols::Quote) => Ok(self.eval_quote(vals)),
             Ok(BuiltinSymbols::Quasiquote) => Ok(self.eval_quasiquote(vals)),
@@ -273,6 +274,40 @@ impl Interpreter {
                     .insert(name.clone(), function.downgrade());
             }
         }
+        RootedVal::none()
+    }
+
+    fn eval_macro<Ptr>(&mut self, vals: &Ptr) -> RootedVal
+    where
+        Ptr: ScopedRef<Vec<WeakVal>>,
+    {
+        struct MacroConstructor {
+            pub name: SymbolId,
+            pub args: Vec<SymbolId>,
+            pub body: Vec<WeakVal>,
+        }
+        let vals_ref = self.get_ref(vals);
+        let MacroConstructor { name, args, body } = match &vals_ref[..] {
+            [_, WeakVal::List(inner), body @ ..] => {
+                if let [WeakVal::Symbol(name), args @ ..] = &self.get_ref(inner)[..] {
+                    MacroConstructor {
+                        name: *name,
+                        args: collect_function_definition_arguments(args),
+                        body: body.iter().cloned().collect(),
+                    }
+                } else {
+                    panic!("wrong macro define form")
+                }
+            }
+            _ => panic!("not a macro definition form"),
+        };
+        let body = prepare_function_body(body, &mut self.heap);
+        let globals = self.get_globals();
+        let macro_val = RootedVal::macro_val(name, args, body.downgrade(), globals, &mut self.heap);
+        self.get_globals()
+            .borrow_mut()
+            .values
+            .insert(name.clone(), macro_val.downgrade());
         RootedVal::none()
     }
 

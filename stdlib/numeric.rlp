@@ -1,3 +1,5 @@
 (__load "stdlib/defines.rlp")
 
 (def (inc x) (+ x 1))
+(def (-- x) (- x 1))
+(def (++ x) (+ x 1))

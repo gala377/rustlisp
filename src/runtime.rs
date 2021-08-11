@@ -157,6 +157,18 @@ impl RootedVal {
         Self::Func(inner)
     }
 
+    pub fn macro_val(
+        name: SymbolId,
+        args: Vec<SymbolId>,
+        body: WeakVal,
+        globals: Environment,
+        heap: &mut Heap,
+    ) -> RootedVal {
+        let inner = heap.allocate(RuntimeFunc::new(name, args, body, globals));
+        Self::Macro(inner)
+    }
+
+
     pub fn lambda(
         env: Environment,
         args: Vec<SymbolId>,

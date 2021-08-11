@@ -1,0 +1,13 @@
+
+(macro (id a) `(list ,@a))
+(def (foo a) `(list ,@a))
+
+(assert-equal (id (1 2 3)) '(1 2 3) "Assertion failed")
+(assert-equal (foo '(1 2 3)) '(list 1 2 3) "Assertion failed")
+
+(macro (insert-1 func-call insert)
+  (if (list? func-call)
+    (+ (list (head func-call) insert) (tail func-call))
+    (panic! "insert-1 can only be used with function calls")))
+
+(assert-equal (insert-1 (list 2 3 4) 1) '(1 2 3 4) "Assertion failed")

@@ -17,4 +17,5 @@ functional_tests! {
     equal_function_test,
     assert_implementations_test,
     quasiquote_form_test,
+    macro_tests,
 }
