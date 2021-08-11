@@ -16,4 +16,5 @@ functional_tests! {
     lambda_captures_local_vars,
     equal_function_test,
     assert_implementations_test,
+    quasiquote_form_test,
 }

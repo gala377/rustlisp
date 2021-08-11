@@ -4,7 +4,7 @@ use std::{collections::HashMap, convert::TryInto};
 use crate::gc::HeapMarked;
 use crate::{
     env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
-    gc::{Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
+    gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
     runtime::{RootedVal, WeakVal},
     utils::JoinedIterator,
 };
@@ -190,6 +190,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::While) => Ok(self.eval_while(vals)),
             Ok(BuiltinSymbols::Set) => Ok(self.eval_set(vals)),
             Ok(BuiltinSymbols::Let) => Ok(self.eval_let(vals)),
+            Ok(BuiltinSymbols::Splice) => panic!("unquote-splicing is not quasiquote context"),
             _ => Err(NotSpecialForm),
         }
     }
@@ -309,7 +310,7 @@ impl Interpreter {
         assert_eq!(
             self.get_ref(vals).len(),
             2,
-            "you can only quote single expression"
+            "you can only quasiquote single expression"
         );
         let expr = self.get_ref(vals)[1].clone();
         self.quasiquote_expr(&expr)
@@ -325,7 +326,7 @@ impl Interpreter {
             WeakVal::Symbol(_) | WeakVal::NumberVal(_) | WeakVal::StringVal(_) => Action::Upgrade,
             WeakVal::List(inner) if self.get_ref(inner).len() == 2 => {
                 let head = &self.get_ref(inner)[0];
-                if head.is_symbol(BuiltinSymbols::Unquote as usize) {
+                if head.is_builtin_symbol(BuiltinSymbols::Unquote) {
                     Action::Unquote
                 } else {
                     Action::Recurse
@@ -338,24 +339,55 @@ impl Interpreter {
             Action::Upgrade => expr.as_root(),
             Action::Unquote => {
                 if let WeakVal::List(inner) = expr {
-                    let raw_val = {
-                        let weak_ref = &self.get_ref(inner)[1];
-                        weak_ref.clone()
-                    };
+                    let raw_val = self.get_ref(inner)[1].clone();
                     self.eval_weak(&raw_val)
                 } else {
                     unreachable!("we checked before the shape of the expr")
                 }
             }
             Action::Recurse => {
-                if let WeakVal::List(inner) = expr {
-                    let res = map_scoped_vec(self, inner, |vm, expr| vm.quasiquote_expr(expr));
+                if let WeakVal::List(ptr) = expr {
+                    let len = self.get_ref(ptr).len();
+                    let mut res = Vec::new();
+                    for i in 0..len {
+                        let raw_val = self.get_ref(ptr)[i].clone();
+                        match &raw_val {
+                            WeakVal::List(inner) if self.get_ref(inner).len() == 2 => {
+                                if !self.handle_possible_unquote_splicing(&mut res, inner) {
+                                    res.push(self.quasiquote_expr(&raw_val));
+                                }
+                            }
+                            _ => res.push(self.quasiquote_expr(&raw_val)),
+                        }
+                    }
                     RootedVal::list_from_rooted(res, &mut self.heap)
                 } else {
                     unreachable!("we checked before the shape of the expr")
                 }
             }
         }
+    }
+
+    fn handle_possible_unquote_splicing(
+        &mut self,
+        res: &mut Vec<RootedVal>,
+        expr: &gc::Weak<Vec<WeakVal>>,
+    ) -> bool {
+        let head = &self.get_ref(expr)[0];
+        if !head.is_builtin_symbol(BuiltinSymbols::Splice) {
+            return false;
+        }
+        let rest = self.get_ref(expr)[1].clone();
+        let rest_evaled = self.eval_weak(&rest);
+        match &rest_evaled {
+            RootedVal::List(inner) => {
+                for val in &*self.get_ref(inner) {
+                    res.push(val.as_root())
+                }
+            }
+            _ => panic!("Unquote-splicing argument has to evaluate to a list"),
+        }
+        true
     }
 
     fn eval_if<Ptr>(&mut self, expr: &Ptr) -> RootedVal

@@ -268,5 +268,6 @@ generate_builtin_symbols! {
         ("set!": 12) => Set,
         ("macro": 13) => Macro,
         ("let": 14) => Let,
+        ("unquote-splice": 15) => Splice,
     }
 }

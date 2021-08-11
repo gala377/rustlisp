@@ -1,0 +1,28 @@
+(assert-equal `(1 2 3) '(1 2 3) "for simple case quasiquote is the same as quote")
+(assert-equal `hello 'hello "for simple case quasiquote is the same as quote")
+(assert-equal `1 '1 "for simple case quasiquote is the same as quote")
+(assert-equal `"hello" '"hello" "for simple case quasiquote is the same as quote")
+(assert-equal `(1 2 (3)) '(1 2 (3)) "for simple case quasiquote is the same as quote")
+(assert-equal `(1 ("hello" '3)) '(1 ("hello" '3)) "for simple case quasiquote is the same as quote")
+
+
+
+
+(assert-equal `(1 2 ,3) '(1 2 3) "unquoting atoms is the same as quote")
+(assert-equal `(1 2 (1 2 ,"hello")) '(1 2 (1 2 "hello")) "unquoting atoms is the same as quote")
+(assert-equal `(1 2 ,'t) '(1 2 t) "unquoting atoms is the same as quote")
+
+(def foo (+ 1 1))
+(assert-equal `(1 2 ,foo) '(1 2 2) "unquoting evaluates variables")
+(def (bar) (+ 1 1))
+(assert-equal `(1 2 ,(bar)) '(1 2 2) "unquoting evaluates variables")
+(assert-equal `(1 2 ,(list 1 2 3 4)) '(1 2 (1 2 3 4)) "unquoting evaluates variables")
+
+(assert-equal `(1 2 ,@'(3)) '(1 2 3) "unquote-splicing splices into the wrapping list")
+(assert-equal `(1 2 (,@(list 1 2 3 'bar))) '(1 2 (1 2 3 bar)) "unquote-splicing splices into the wrapping list")
+(assert-equal `(1 2 ,@'(3)) '(1 2 3) "unquote-splicing splices into the wrapping list")
+
+(def a-list '(1 2 3))
+(def (b-list a b c) (list c b a))
+(assert-equal `(0 ,@a-list) '(0 1 2 3) "unquote-splicing splices into the wrapping list")
+(assert-equal `(0 ,@(b-list 1 2 3)) '(0 3 2 1) "unquote-splicing splices into the wrapping list")

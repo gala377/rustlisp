@@ -21,6 +21,7 @@ enum Token {
     SymbolQuote,
     QuasiQuote,
     Unquote,
+    Splice,
 }
 
 impl From<&str> for Token {
@@ -33,6 +34,7 @@ impl From<&str> for Token {
             "'" => SymbolQuote,
             "`" => QuasiQuote,
             "," => Unquote,
+            ",@" => Splice,
             other => Val(String::from(other)),
         }
     }
@@ -46,6 +48,8 @@ fn tokenize(source: &str) -> Vec<Token> {
         .replace('\'', " ' ")
         .replace('`', " ` ")
         .replace(',', " , ")
+        .replace('@', " @ ")
+        .replace(" ,  @ ", " ,@ ")
         .split_whitespace()
         .map(Token::from)
         .collect()
@@ -109,6 +113,7 @@ where
             Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table),
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table),
             Token::Unquote => parse_unquote(curr_atom, heap, symbol_table),
+            Token::Splice => parese_splice(curr_atom, heap, symbol_table),
             _ => Err(ParseError::UnexpectedClosingParenthesis),
         }
     } else {
@@ -134,6 +139,7 @@ where
             Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table)?,
             Token::Unquote => parse_unquote(curr_atom, heap, symbol_table)?,
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table)?,
+            Token::Splice => parese_splice(curr_atom, heap, symbol_table)?,
         });
     }
     Err(ParseError::UnclosedList)
@@ -156,6 +162,7 @@ where
                 res.pop();
                 break;
             }
+            Token::Splice => res += ",@",
         };
         res.push(' ');
     }
@@ -207,6 +214,23 @@ where
     Ok(RootedVal::list_from_rooted(
         vec![
             RootedVal::Symbol(BuiltinSymbols::Unquote as SymbolId),
+            parse_expr(curr_atom, heap, symbol_table)?,
+        ],
+        heap,
+    ))
+}
+
+fn parese_splice<It>(
+    curr_atom: &mut It,
+    heap: &mut Heap,
+    symbol_table: &mut SymbolTable,
+) -> Result<RootedVal, ParseError>
+where
+    It: Iterator<Item = Token>,
+{
+    Ok(RootedVal::list_from_rooted(
+        vec![
+            RootedVal::Symbol(BuiltinSymbols::Splice as SymbolId),
             parse_expr(curr_atom, heap, symbol_table)?,
         ],
         heap,

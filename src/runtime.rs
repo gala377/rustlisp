@@ -294,6 +294,10 @@ impl WeakVal {
         }
     }
 
+    pub fn is_builtin_symbol(&self, sym: BuiltinSymbols) -> bool {
+        self.is_symbol(sym as usize)
+    }
+
     pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use WeakVal::*;
         match self {
