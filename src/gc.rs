@@ -776,6 +776,7 @@ impl MarkSweep {
         use WeakVal::*;
         match val {
             Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
+            Macro(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             List(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),

@@ -2,12 +2,7 @@ use std::{collections::HashMap, convert::TryInto};
 
 #[cfg(debug)]
 use crate::gc::HeapMarked;
-use crate::{
-    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
-    gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
-    runtime::{RootedVal, WeakVal},
-    utils::JoinedIterator,
-};
+use crate::{env::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef}, runtime::{RootedVal, RuntimeFunc, WeakVal}, utils::JoinedIterator};
 
 type Env = Environment;
 
@@ -108,9 +103,14 @@ impl Interpreter {
         if let Ok(val) = self.try_eval_special_form(vals) {
             return val;
         }
-        let mut evaled = map_scoped_vec(self, vals, |vm, val| vm.eval_weak(val));
-        let func = evaled.remove(0);
-        self.call(&func, evaled)
+        let func = self.get_ref(vals)[0].clone();
+        let func_evaled = self.eval_weak(&func);
+        if let RootedVal::Macro(macro_body) = &func_evaled {
+            let macro_args = map_scoped_vec_range(self, vals, (1,0), |_, val| val.as_root());
+            return self.expand_macro(macro_body, macro_args);
+        }
+        let evaled = map_scoped_vec_range(self, vals, (1,0), |vm, val| vm.eval_weak(val));
+        self.call(&func_evaled, evaled)
     }
 
     pub fn call(&mut self, func: &RootedVal, args: Vec<RootedVal>) -> RootedVal {
@@ -162,6 +162,22 @@ impl Interpreter {
             self.run_gc();
         }
         res
+    }
+
+    fn expand_macro(&mut self, macro_body: &gc::Root<RuntimeFunc>, args: Vec<RootedVal>) -> RootedVal {
+        let (func_body, func_args, func_globals) = {
+            let func = self.get_ref(macro_body);
+            (func.body.clone(), func.args.clone(), func.globals.clone())
+        };
+        let func_env = func_call_env(&func_args, args);
+        let res = self.with_frame(
+            FuncFrame {
+                globals: func_globals,
+                locals: Some(func_env),
+            },
+            |vm| vm.eval_weak(&func_body),
+        );
+        self.eval_rooted(&res)
     }
 
     fn with_frame<R>(&mut self, frame: FuncFrame, func: impl FnOnce(&mut Self) -> R) -> R {

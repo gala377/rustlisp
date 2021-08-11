@@ -91,6 +91,7 @@ pub enum RootedVal {
 
     // Reference immutable types
     Func(Root<RuntimeFunc>),
+    Macro(Root<RuntimeFunc>),
     NativeFunc(NativeFunc),
     StringVal(Root<std::string::String>),
 
@@ -112,6 +113,7 @@ impl RootedVal {
             NativeFunc(x) => WeakVal::NativeFunc(x),
             UserType(x) => WeakVal::UserType(x.downgrade()),
             Lambda(x) => WeakVal::Lambda(x.downgrade()),
+            Macro(x) => WeakVal::Macro(x.downgrade()),
         }
     }
 
@@ -218,6 +220,10 @@ impl RootedVal {
                 let symbol = heap.deref_ptr(func).name;
                 format!("Function {}", symbol_table[symbol])
             }
+            Macro(func) => {
+                let symbol = heap.deref_ptr(func).name;
+                format!("Macro {}", symbol_table[symbol])
+            }
             Lambda(_) => std::string::String::from("Lambda object"),
             _ => "No representation".into(),
         }
@@ -256,6 +262,7 @@ pub enum WeakVal {
     StringVal(gc::Weak<std::string::String>),
     List(gc::Weak<Vec<WeakVal>>),
     Func(gc::Weak<RuntimeFunc>),
+    Macro(gc::Weak<RuntimeFunc>),
     NativeFunc(NativeFunc),
     Lambda(gc::Weak<Lambda>),
     UserType(WeakStructPtr),
@@ -273,6 +280,7 @@ impl WeakVal {
             NativeFunc(x) => RootedVal::NativeFunc(x),
             Lambda(x) => RootedVal::Lambda(x.upgrade()),
             UserType(x) => RootedVal::UserType(x.upgrade()),
+            Macro(x) => RootedVal::Macro(x.upgrade()),
         }
     }
 
@@ -318,6 +326,10 @@ impl WeakVal {
                 let symbol = heap.deref_ptr(func).name;
                 format!("Function {}", symbol_table[symbol])
             }
+            Macro(func) => {
+                let symbol = heap.deref_ptr(func).name;
+                format!("Macro {}", symbol_table[symbol])
+            }
             Lambda(_) => std::string::String::from("Lambda object"),
             UserType(_) => "Not supported".into(),
         }
@@ -334,6 +346,10 @@ impl WeakVal {
             Func(func) => {
                 let name = &symbol_table[heap.deref_ptr(func).name];
                 format!("Runtime function {}", name)
+            }
+            Macro(func) => {
+                let symbol = heap.deref_ptr(func).name;
+                format!("Macro {}", symbol_table[symbol])
             }
             Lambda(_) => "Lambda function".to_owned(),
             _ => "Not supported".into(),
@@ -362,6 +378,10 @@ impl WeakVal {
             Func(func) => {
                 let name = heap.deref_ptr(func).name;
                 format!("Runtime function {}", name)
+            }
+            Macro(func) => {
+                let symbol = heap.deref_ptr(func).name;
+                format!("Macro {}", symbol)
             }
             Lambda(_) => "Lambda function".to_owned(),
             _ => "Not supported".into(),
