@@ -2,7 +2,12 @@ use std::{collections::HashMap, convert::TryInto};
 
 #[cfg(debug)]
 use crate::gc::HeapMarked;
-use crate::{env::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef}, runtime::{RootedVal, RuntimeFunc, WeakVal}, utils::JoinedIterator};
+use crate::{
+    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
+    gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
+    runtime::{FunctionArgs, RootedVal, RuntimeFunc, WeakVal},
+    utils::JoinedIterator,
+};
 
 type Env = Environment;
 
@@ -106,10 +111,10 @@ impl Interpreter {
         let func = self.get_ref(vals)[0].clone();
         let func_evaled = self.eval_weak(&func);
         if let RootedVal::Macro(macro_body) = &func_evaled {
-            let macro_args = map_scoped_vec_range(self, vals, (1,0), |_, val| val.as_root());
+            let macro_args = map_scoped_vec_range(self, vals, (1, 0), |_, val| val.as_root());
             return self.expand_macro(macro_body, macro_args);
         }
-        let evaled = map_scoped_vec_range(self, vals, (1,0), |vm, val| vm.eval_weak(val));
+        let evaled = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
         self.call(&func_evaled, evaled)
     }
 
@@ -120,7 +125,7 @@ impl Interpreter {
                     let func = self.get_ref(func);
                     (func.body.clone(), func.args.clone(), func.globals.clone())
                 };
-                let func_env = func_call_env(&func_args, args);
+                let func_env = func_call_env(&func_args, args, &mut self.heap);
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
@@ -139,7 +144,7 @@ impl Interpreter {
                         func.globals.clone(),
                     )
                 };
-                let func_env = func_call_env_with_parent(&func_args, args, func_env);
+                let func_env = func_call_env_with_parent(&func_args, args, func_env, &mut self.heap);
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
@@ -164,12 +169,16 @@ impl Interpreter {
         res
     }
 
-    fn expand_macro(&mut self, macro_body: &gc::Root<RuntimeFunc>, args: Vec<RootedVal>) -> RootedVal {
+    fn expand_macro(
+        &mut self,
+        macro_body: &gc::Root<RuntimeFunc>,
+        args: Vec<RootedVal>,
+    ) -> RootedVal {
         let (func_body, func_args, func_globals) = {
             let func = self.get_ref(macro_body);
             (func.body.clone(), func.args.clone(), func.globals.clone())
         };
-        let func_env = func_call_env(&func_args, args);
+        let func_env = func_call_env(&func_args, args, &mut self.heap);
         let res = self.with_frame(
             FuncFrame {
                 globals: func_globals,
@@ -223,7 +232,7 @@ impl Interpreter {
             },
             Function {
                 name: SymbolId,
-                args: Vec<usize>,
+                args: FunctionArgs,
                 body: Vec<WeakVal>,
             },
         }
@@ -283,7 +292,7 @@ impl Interpreter {
     {
         struct MacroConstructor {
             pub name: SymbolId,
-            pub args: Vec<SymbolId>,
+            pub args: FunctionArgs,
             pub body: Vec<WeakVal>,
         }
         let vals_ref = self.get_ref(vals);
@@ -661,31 +670,52 @@ impl Interpreter {
 }
 
 #[inline]
-fn func_call_env(args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
+fn func_call_env(args: &FunctionArgs, values: Vec<RootedVal>, heap: &mut Heap) -> Environment {
     let func_env = Environment::new();
-    populate_env(func_env, args, values)
+    populate_env(func_env, args, values, heap)
 }
 
 #[inline]
 fn func_call_env_with_parent(
-    args: &[SymbolId],
+    args: &FunctionArgs,
     values: Vec<RootedVal>,
     parent: Environment,
+    heap: &mut Heap,
 ) -> Environment {
     let func_env = Environment::with_parent(parent);
-    populate_env(func_env, args, values)
+    populate_env(func_env, args, values, heap)
 }
 
-fn populate_env(mut env: Environment, args: &[SymbolId], values: Vec<RootedVal>) -> Environment {
-    assert_eq!(
-        values.len(),
-        args.len(),
-        "Call provided more values than function args"
+fn populate_env(
+    mut env: Environment,
+    args: &FunctionArgs,
+    values: Vec<RootedVal>,
+    heap: &mut Heap,
+) -> Environment {
+    assert!(
+        values.len() >= args.positional.len(),
+        "Not enough call function args"
     );
     {
         let func_env_map = &mut env.borrow_mut().values;
-        for (name, val) in (args, values).zip() {
-            func_env_map.insert(name.clone(), val.downgrade());
+        for i in 0..args.positional.len() {
+            func_env_map.insert(args.positional[i].clone(), values[i].as_weak());
+        }
+        let rest_start_index = args.positional.len();
+        let has_values_for_rest = values.len() > rest_start_index;
+        match &args.rest {
+            Some(name) if has_values_for_rest => {
+                let rest_arg_value = values[rest_start_index..].iter().cloned().collect();
+                func_env_map.insert(
+                    *name,
+                    RootedVal::list_from_rooted(rest_arg_value, heap).as_weak(),
+                );
+            }
+            Some(name) => {
+                func_env_map.insert(*name, RootedVal::nil(heap).as_weak());
+            }
+            None if has_values_for_rest => panic!("Call supplied more arguments than expected"),
+            None => (),
         }
     }
     env
@@ -693,16 +723,27 @@ fn populate_env(mut env: Environment, args: &[SymbolId], values: Vec<RootedVal>)
 
 struct NotSpecialForm;
 
-fn collect_function_definition_arguments(args: &[WeakVal]) -> Vec<SymbolId> {
-    args.iter()
-        .map(|x| {
-            if let WeakVal::Symbol(name) = x {
-                name.clone()
-            } else {
-                panic!("function arguments should be symbols");
+fn collect_function_definition_arguments(args: &[WeakVal]) -> FunctionArgs {
+    let mut function_args = FunctionArgs { positional: Vec::with_capacity(2), rest: None };
+    let mut rest_arg = false;
+    for arg in args {
+        if let WeakVal::Symbol(name) = arg {
+            if *name == BuiltinSymbols::Dot as usize {
+                rest_arg = true;
+                break;
             }
-        })
-        .collect()
+            function_args.positional.push(*name);
+        }
+    }
+    if rest_arg {
+        match args.last() {
+            Some(WeakVal::Symbol(name)) if *name == BuiltinSymbols::Dot as usize => panic!("Rest function arg name missing"),
+            Some(WeakVal::Symbol(name)) => function_args.rest = Some(*name),
+            Some(_) => panic!("Function rest arg name has to be a symbol"),
+            None => unreachable!("To get there there has to be at least one symbol"),
+        }
+    }
+    function_args
 }
 
 fn prepare_function_body(mut body: Vec<WeakVal>, heap: &mut Heap) -> RootedVal {

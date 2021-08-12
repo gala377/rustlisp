@@ -269,5 +269,6 @@ generate_builtin_symbols! {
         ("macro": 13) => Macro,
         ("let": 14) => Let,
         ("unquote-splice": 15) => Splice,
+        (".": 16) => Dot,
     }
 }

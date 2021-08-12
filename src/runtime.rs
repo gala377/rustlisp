@@ -7,15 +7,21 @@ use crate::{
 };
 use std::rc::Rc;
 
+#[derive(Clone)]
+pub struct FunctionArgs {
+    pub positional: Vec<SymbolId>,
+    pub rest: Option<SymbolId>,
+}
+
 pub struct Lambda {
     pub body: WeakVal,
-    pub args: Vec<SymbolId>,
+    pub args: FunctionArgs,
     pub env: Environment,
     pub globals: Environment,
 }
 
 impl Lambda {
-    fn new(env: Environment, args: Vec<SymbolId>, body: WeakVal, globals: Environment) -> Self {
+    fn new(env: Environment, args: FunctionArgs, body: WeakVal, globals: Environment) -> Self {
         Self {
             env,
             args,
@@ -28,17 +34,12 @@ impl Lambda {
 pub struct RuntimeFunc {
     pub body: WeakVal,
     pub name: SymbolId,
-    pub args: Vec<SymbolId>,
+    pub args: FunctionArgs,
     pub globals: Environment,
 }
 
 impl RuntimeFunc {
-    fn new(
-        name: SymbolId,
-        args: Vec<SymbolId>,
-        body: WeakVal,
-        globals: Environment,
-    ) -> RuntimeFunc {
+    fn new(name: SymbolId, args: FunctionArgs, body: WeakVal, globals: Environment) -> RuntimeFunc {
         Self {
             name,
             args,
@@ -148,7 +149,7 @@ impl RootedVal {
 
     pub fn function(
         name: SymbolId,
-        args: Vec<SymbolId>,
+        args: FunctionArgs,
         body: WeakVal,
         globals: Environment,
         heap: &mut Heap,
@@ -159,7 +160,7 @@ impl RootedVal {
 
     pub fn macro_val(
         name: SymbolId,
-        args: Vec<SymbolId>,
+        args: FunctionArgs,
         body: WeakVal,
         globals: Environment,
         heap: &mut Heap,
@@ -168,10 +169,9 @@ impl RootedVal {
         Self::Macro(inner)
     }
 
-
     pub fn lambda(
         env: Environment,
-        args: Vec<SymbolId>,
+        args: FunctionArgs,
         body: WeakVal,
         globals: Environment,
         heap: &mut Heap,
