@@ -140,10 +140,10 @@
 
 (std/testing/assert-equal? '(1 2 3 4) (my-foo 1 2) "this should pass")
 
-(def (supports-rest a b . rest)
+(def supports-rest (lambda (a b . rest)
     (print (to-str a))
     (print (to-str b))
-    (print (to-str rest)))
+    (print (to-str rest))))
 
 (supports-rest 1 2)
 (supports-rest 1 2 3 4 5 6)
