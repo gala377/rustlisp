@@ -1,7 +1,7 @@
 (__load "stdlib/numeric.rlp")
 (__load "stdlib/defines.rlp")
 
-(macro (-> arg funcs)
+(macro (~> arg . funcs)
   (def (insert-1 l v)
     (unless (list? l)
       (set! l (list l)))
@@ -14,7 +14,7 @@
     (set! i (++ i)))
   curr-call)
 
-(macro (->> arg funcs)
+(macro (~>> arg . funcs)
   (def (push-arg l v)
     (unless (list? l)
       (set! l (list l)))

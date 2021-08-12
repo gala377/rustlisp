@@ -129,12 +129,12 @@
 
 (print "Threading macro test")
 
-(print (-> "hello" (
+(print (~> "hello"
     (+ " world")
     (+ " world again")
     (list 1 2 3)
     to-str
-)))
+))
 
 (def (my-foo a b) (list a b 3 4))
 
