@@ -6,7 +6,6 @@ use crate::{
     env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
     gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
     runtime::{FunctionArgs, RootedVal, RuntimeFunc, WeakVal},
-    utils::JoinedIterator,
 };
 
 type Env = Environment;
