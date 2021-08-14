@@ -13,9 +13,8 @@ name = "lispy"
 name = "lispylib"
 
 [profile.release]
-lto = "fat"
-# for flamegraph
 debug = true
+lto = "fat"
 panic = "abort"
 
 [dependencies]
