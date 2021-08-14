@@ -1,0 +1,23 @@
+(__load "std/defines")
+(__load "std/numeric")
+
+
+(def (range n)
+    (def (range i n acc)
+        (push! acc i)
+        (if (eq? i n )
+            acc
+            (range (inc i) n acc)))
+    (range 0 n '()))
+
+
+(def (map func values)
+    (def (map func values acc)
+        (def i (length acc))
+        (if (eq? i (length values))
+            acc
+            (begin
+                (def mapped (func (nth values i)))
+                (push! acc mapped)
+                (map func values acc))))
+    (map func values '()))

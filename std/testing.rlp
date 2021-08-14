@@ -1,0 +1,18 @@
+(macro (assert pred msg)
+    `(unless ,pred
+        (let ((obj-msg ,(to-str pred)))
+          (panic! (+ obj-msg "is False:" ,msg)))))
+
+(macro (assert-equal? a b msg)
+    `(unless (equal? ,a ,b)
+        (let ((obj-repr ,(+ (to-str a) "!=" (to-str b)))
+              (eq-msg (+ (to-str ,a) "!=" (to-str ,b))))
+            (let ((final-msg (+ ,msg ": " obj-repr " " eq-msg)))
+                (panic! final-msg)))))
+
+(macro (assert-eq? a b msg)
+    `(unless (eq? ,a ,b)
+        (let ((obj-repr ,(+ (to-str a) "!=" (to-str b)))
+              (eq-msg (+ (to-str ,a) "!=" (to-str ,b))))
+            (let ((final-msg (+ ,msg ":" obj-repr " " eq-msg)))
+                (panic! final-msg)))))

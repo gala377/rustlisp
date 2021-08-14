@@ -1,0 +1,5 @@
+(__load "std/defines")
+
+(def (inc x) (+ x 1))
+(def (-- x) (- x 1))
+(def (++ x) (+ x 1))
