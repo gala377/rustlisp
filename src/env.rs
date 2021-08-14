@@ -391,5 +391,6 @@ generate_builtin_symbols! {
         (".": 16) => Dot,
         ("module-lookup-item": 17) => ModuleLookupItem,
         ("export": 18) => Export,
+        ("identity": 19) => Identity,
     }
 }

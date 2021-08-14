@@ -207,12 +207,15 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "assert-true" => assert_true_impl,
         "panic!" => panic_impl,
         "module-lookup-item" => load::module_lookup_item_runtime_wrapper,
+        "identity" => identity,
     });
 }
 
 use RootedVal::*;
 
 native_functions! {
+    typed identity(vm, arg) => arg.clone();
+
     typed less_than(vm, NumberVal(a), NumberVal(b)) =>
         RootedVal::predicate(*a < *b);
 
