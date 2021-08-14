@@ -150,7 +150,7 @@ impl<T> Root<T> {
 
     pub fn downgrade(self) -> Weak<T> {
         unsafe { self.ptr.get().as_ref().update_strong_count(|x| x - 1) };
-        let res = Weak { ptr: self.ptr.get() };
+        let res = Weak { ptr: Cell::new(self.ptr.get()) };
         std::mem::forget(self);
         res
     }
@@ -223,15 +223,15 @@ impl<T: ?Sized> Drop for Root<T> {
 
 #[repr(transparent)]
 pub struct Weak<T: ?Sized> {
-    ptr: ptr::NonNull<RawPtrBox<T>>,
+    ptr: Cell<ptr::NonNull<RawPtrBox<T>>>,
 }
 
 impl<T: ?Sized> Weak<T> {
     pub fn upgrade(self) -> Root<T> {
         unsafe {
-            self.ptr.as_ref().update_strong_count(|x| x + 1);
+            self.ptr.get().as_ref().update_strong_count(|x| x + 1);
             Root {
-                ptr: Cell::new(self.ptr),
+                ptr: self.ptr,
                 _phantom: PhantomData,
             }
         }
@@ -260,7 +260,7 @@ impl<T: ?Sized> ScopedRef<T> for Weak<T> {
         //
         // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
         // tracked containers.
-        unsafe { &*self.ptr.as_ref().value.get() }
+        unsafe { &*self.ptr.get().as_ref().value.get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
@@ -276,13 +276,13 @@ impl<T: ?Sized> ScopedRef<T> for Weak<T> {
         //
         // tl;dr: It is safe if dereferenced `Weak` is inside `Interpreter`'s
         // tracked containers.
-        unsafe { &mut *self.ptr.as_ref().value.get() }
+        unsafe { &mut *self.ptr.get().as_ref().value.get() }
     }
 }
 
 impl<T: ?Sized> HeapMarked for Weak<T> {
     fn entry_index(&self) -> usize {
-        unsafe { self.ptr.as_ref().entry_index }
+        unsafe { self.ptr.get().as_ref().entry_index }
     }
 }
 
