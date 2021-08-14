@@ -11,3 +11,14 @@
     (panic! "insert-1 can only be used with function calls")))
 
 (assert-equal (insert-1 (list 2 3 4) 1) '(1 2 3 4) "Assertion failed")
+
+(macro (top-level-begin a b)
+  `(begin
+    (def ,a "hello")
+    (def ,b "world")
+))
+
+(top-level-begin foo bar)
+
+(assert-equal foo "hello" "assertion failed")
+(assert-equal bar "world" "assertion failed")
