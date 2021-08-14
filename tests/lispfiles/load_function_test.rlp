@@ -4,7 +4,7 @@
 (def (test-func x) x)
 
 
-(load "tests/lispfiles/helpers/load_test_helper.rlp")
+(load "tests/lispfiles/helpers/load_test_helper")
 
 (assert-equal (test-func 10) 10)
 (assert-equal (exported-func 10) 20)

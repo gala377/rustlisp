@@ -1,3 +1,4 @@
+(load "std/io")
 
 (print "Does it work?")
 (print "Yey it works!!!")

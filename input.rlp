@@ -1,4 +1,10 @@
+
+(load "std/io")
+(import "std/collections")
+(import "std/intrinsic")
+
 (print "start of module")
+
 
 (def dont-rewrite "pls dont change")
 (def (my-func x)
@@ -7,7 +13,7 @@
 
 (print "Okay this is a main file, now I load")
 
-(load "check_load.rlp")
+(load "check_load")
 
 (print "after load")
 (print "i am here")
@@ -32,11 +38,11 @@
 (print "ending main module")
 
 (print "Stdlib test")
-(def to-ten (std::coll::range 10))
+(def to-ten (std/collections/range 10))
 (print to-ten)
 (def (*2 x) (+ x x))
 (print "function defined")
-(def mapped (std::coll::map *2 to-ten))
+(def mapped (std/collections/map *2 to-ten))
 (print "mapped defined")
 (print mapped)
 
@@ -50,8 +56,8 @@
 (supports-rest 1 2 3 )
 (supports-rest 1 2 3 4 )
 
-(print-modules)
-(print-module-globals "std/intrinsic")
+(std/intrinsic/print-modules)
+(std/intrinsic/print-module-globals "std/intrinsic")
 (def print-globals (module-lookup-item "std/intrinsic" 'print-globals))
 (print (repr print-globals))
 (print-globals)

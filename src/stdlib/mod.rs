@@ -87,12 +87,42 @@ pub fn empty_env(symbol_table: &mut SymbolTable) -> Environment {
 
 pub fn add_std_lib(vm: &mut Interpreter) {
     define_native_modules(vm);
-    load::load_from_file(vm, "stdlib/lib.rlp".into(), false);
+    load::load_from_file(vm, "std/lib.rlp".into(), false);
 }
 
 fn define_native_modules(vm: &mut Interpreter) {
     def_module!(vm, "std/intrinsic", {
         "print-globals" => print_globals,
+        "print-module-globals" => print_module_globals,
+        "print-modules" => |vm, _| {
+            for module in &vm.modules {
+                println!("Module {}", module.0)
+            }
+            RootedVal::none()
+        },
+    });
+
+    def_module!(vm, "std/native", {
+        "dispatch!" => dispatch,
+    });
+
+    def_module!(vm, "std/experimental", {
+        "counter" => native::new_counter,
+    });
+
+    def_module!(vm, "std/io", {
+        "print" => |vm, args| {
+            args.into_iter().for_each(|x| {
+                println!("{}", x.str(&mut vm.heap, &mut vm.symbols));
+            });
+            RootedVal::none()
+        },
+        "read-line" => |vm, args| {
+            assert!(args.is_empty(), "read-line takes 0 arguments");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
+            RootedVal::string(input, &mut vm.heap)
+        },
     });
 }
 
@@ -169,35 +199,12 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "greater-than" => greater_than,
         ">" => greater_than,
 
-        // native
-        "dispatch!" => dispatch,
-        "experiment-counter" => native::new_counter,
-
-        // io
-        "print" => |vm, args| {
-            args.into_iter().for_each(|x| {
-                println!("{}", x.str(&mut vm.heap, &mut vm.symbols));
-            });
-            RootedVal::none()
-        },
-        "read-line" => |vm, args| {
-            assert!(args.is_empty(), "read-line takes 0 arguments");
-            let mut input = String::new();
-            std::io::stdin().read_line(&mut input).unwrap();
-            RootedVal::string(input, &mut vm.heap)
-        },
         "load" => load::load_from_file_runtime_wrapper,
         "__load" => load::load_from_file_without_std_env_runtime_wrapper,
+        "import" => load::import_module_runtime_wrapper,
         "assert" => assert_impl,
         "assert-equal" => assert_equal_impl,
         "assert-true" => assert_true_impl,
-        "print-module-globals" => print_module_globals,
-        "print-modules" => |vm, _| {
-            for module in &vm.modules {
-                println!("Module {}", module.0)
-            }
-            RootedVal::none()
-        },
         "panic!" => panic_impl,
         "module-lookup-item" => load::module_lookup_item_runtime_wrapper,
     });

@@ -26,6 +26,8 @@
   (set! execute-times (-- execute-times)))
 (assert-equal execute-times 0)
 
+(load "std/threading")
+
 (assert-equal
   (~> "hello"
     (+ " world")

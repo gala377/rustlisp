@@ -1,3 +1,4 @@
+(load "std/threading")
 (assert-equal 1 1 "this should pass")
 
 

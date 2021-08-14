@@ -1,7 +1,11 @@
 
-(def counter (experiment-counter 0))
+(load "std/native")
+(import "std/experimental")
+
+(def counter (std/experimental/counter 0))
 (def (int-add c) (dispatch! c "inc" '()))
 (def (int-sub c) (dispatch! c "dev" '()))
+
 (def (int-val c) (dispatch! c "get" '()))
 
 (assert-equal (int-val counter) 0)

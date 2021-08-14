@@ -1,8 +1,6 @@
 use crate::{
-    check_ptr,
     env::{Environment, SymbolId},
     eval::{FuncFrame, Interpreter, ModuleState},
-    gc::HeapMarked,
     native_functions,
     reader::{self, AST},
     runtime::RootedVal,
@@ -29,12 +27,7 @@ fn _load_from_file_runtime_wrapper(
     let arg = args.pop().unwrap();
     match arg {
         RootedVal::StringVal(ref path) => {
-            check_ptr!(vm.heap, path);
-            let file_path = {
-                let path = vm.heap.deref_ptr(path);
-                println!("the path we load from is {}", *path);
-                path.clone()
-            };
+            let file_path = vm.get_ref(path).clone() + ".rlp";
             load_from_file(vm, file_path, load_std_env);
         }
         _ => panic!("illegal form of load"),
@@ -88,11 +81,33 @@ fn module_lookup_item(vm: &mut Interpreter, module: &str, item: SymbolId) -> Roo
     }
 }
 
+fn import_module(vm: &mut Interpreter, module_path: &str) {
+    match vm.modules.get(module_path) {
+        Some(ModuleState::Evaluated(_)) => {},
+        Some(ModuleState::Evaluating) => panic!("Circular dependency {}", module_path),
+        None => {
+            vm.modules
+                .insert(module_path.to_owned(), ModuleState::Evaluating);
+            let source =
+                std::fs::read_to_string(module_path).expect(&format!("No such path {}", module_path));
+            let module = load_module(vm, &source, true);
+            let module_entry = vm.modules.get_mut(module_path).unwrap();
+            *module_entry = ModuleState::Evaluated(module.clone());
+        }
+    };
+}
+
 use crate::runtime::RootedVal::*;
 
 native_functions! {
     typed module_lookup_item_runtime_wrapper(vm, StringVal(module), Symbol(item)) {
         let module = vm.get_ref(module).clone() + ".rlp";
         module_lookup_item(vm, &module, *item)
+    };
+
+    typed import_module_runtime_wrapper(vm, StringVal(module)) {
+        let path = vm.get_ref(module).clone() + ".rlp";
+        import_module(vm, &path);
+        RootedVal::none()
     };
 }
