@@ -52,3 +52,6 @@
 
 (print-modules)
 (print-module-globals "std/intrinsic")
+(def print-globals (module-lookup-item "std/intrinsic" 'print-globals))
+(print (repr print-globals))
+(print-globals)

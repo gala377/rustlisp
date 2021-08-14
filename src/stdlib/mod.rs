@@ -193,6 +193,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
             RootedVal::none()
         },
         "panic!" => panic_impl,
+        "module-lookup-item" => load::module_lookup_item_runtime_wrapper,
     });
 }
 

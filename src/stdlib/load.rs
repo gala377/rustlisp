@@ -1,12 +1,4 @@
-use crate::{
-    check_ptr,
-    env::Environment,
-    eval::{FuncFrame, Interpreter, ModuleState},
-    gc::HeapMarked,
-    reader::{self, AST},
-    runtime::RootedVal,
-    stdlib,
-};
+use crate::{check_ptr, env::{Environment, SymbolId}, eval::{FuncFrame, Interpreter, ModuleState}, gc::HeapMarked, native_functions, reader::{self, AST}, runtime::RootedVal, stdlib};
 
 pub fn load_from_file_without_std_env_runtime_wrapper(
     vm: &mut Interpreter,
@@ -74,4 +66,26 @@ fn load_module(vm: &mut Interpreter, source: &str, load_std_env: bool) -> Enviro
         vm.eval(&expr);
     });
     vm.call_stack.pop().unwrap().globals
+}
+
+fn module_lookup_item(vm: &mut Interpreter, module: &str, item: SymbolId) -> RootedVal {
+    match vm.modules.get(module) {
+        None => panic!("Not module {} found", module),
+        Some(ModuleState::Evaluating) => panic!("Cannot load from unevaluated module {}", module),
+        Some(ModuleState::Evaluated(globals)) => {
+            match globals.borrow().values.get(&item) {
+                None => panic!("No item {} in module {}", vm.symbols[item], module),
+                Some(item) => item.as_root(),
+            }
+        }
+    }
+}
+
+use crate::runtime::RootedVal::*;
+
+native_functions! {
+    typed module_lookup_item_runtime_wrapper(vm, StringVal(module), Symbol(item)) {
+        let module = vm.get_ref(module).clone();
+        module_lookup_item(vm, &module, *item)
+    };
 }
