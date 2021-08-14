@@ -1,2 +1,0 @@
-(def (func x) x)
-(print "hello" "its me" "from the other side" "from the other side")
