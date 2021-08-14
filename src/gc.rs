@@ -236,6 +236,13 @@ impl<T: ?Sized> Weak<T> {
             }
         }
     }
+
+    // Swaps pointers between two Weak of the same type.
+    pub fn swap(&self, other: &Weak<T>) {
+        let tmp = self.ptr.get();
+        self.ptr.set(other.ptr.get());
+        other.ptr.set(tmp);
+    }
 }
 
 impl<T> PartialEq for Weak<T> {
