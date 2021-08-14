@@ -243,6 +243,6 @@ fn parse_atom(curr_atom: String, symbol_table: &mut SymbolTable) -> Result<Roote
     // It also handles negative numbers.
     match curr_atom.parse() {
         Ok(val) => Ok(RootedVal::NumberVal(val)),
-        Err(_) => Ok(RootedVal::Symbol(symbol_table.put_symbol(curr_atom))),
+        Err(_) => Ok(RootedVal::Symbol(symbol_table.put_symbol(&curr_atom))),
     }
 }

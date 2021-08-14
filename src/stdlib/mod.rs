@@ -3,7 +3,7 @@ use std::{collections::HashMap, rc::Rc};
 use crate::{
     check_ptr,
     env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
-    eval::Interpreter,
+    eval::{Interpreter, ModuleState},
     gc::HeapMarked,
     runtime::{RootedVal, WeakVal},
 };
@@ -66,7 +66,7 @@ macro_rules! native_module {
 
 macro_rules! def_func {
     ($map:ident, $symbols:ident, $name:literal, $lambda:expr) => {
-        let id = $symbols.put_symbol($name.into());
+        let id = $symbols.put_symbol($name);
         $map.insert(id, WeakVal::native_function($lambda));
     };
 }

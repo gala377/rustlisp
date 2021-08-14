@@ -1,4 +1,4 @@
-use crate::runtime::WeakVal;
+use crate::{eval::{Interpreter, ModuleState}, runtime::WeakVal};
 use std::{
     borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc,
 };
@@ -84,6 +84,56 @@ impl EnvironmentImpl {
     }
 }
 
+
+struct NativeModule {
+    pub path: &'static str,
+    pub items: HashMap<String, WeakVal>,
+}
+
+impl NativeModule {
+    pub fn new(path: &'static str) -> Self {
+        Self {
+            path,
+            items: Default::default(),
+        }
+    }
+
+    pub fn with_items(path: &'static str, items: HashMap<String, WeakVal>) -> Self {
+        Self { path, items }
+    }
+
+    pub fn insert_item(&mut self, key: String, val: WeakVal) {
+        if let None = self.items.insert(key, val) {
+            panic!("Item already defined")
+        }
+    }
+
+    pub fn add_into_vm(self, vm: &mut Interpreter) {
+        match vm.modules.get_mut(self.path) {
+            Some(ModuleState::Evaluating) => {
+                panic!("Loading native module into currently evaluated module")
+            }
+            Some(ModuleState::Evaluated(ref mut env)) => {
+                for (name, value) in self.items.into_iter() {
+                    let sym_id = vm.symbols.put_symbol(&name);
+                    env.borrow_mut().values.insert(sym_id, value);
+                }
+            }
+            None => {
+                let env: HashMap<SymbolId, WeakVal> = self
+                    .items
+                    .into_iter()
+                    .map(|(name, val)| (vm.symbols.put_symbol(&name), val))
+                    .collect();
+                vm.modules.insert(
+                    self.path.into(),
+                    ModuleState::Evaluated(Environment::from(env)),
+                );
+            }
+        }
+    }
+}
+
 /// Symbols Identifier.
 /// Can be used to quickly compare symbols for identity.
 pub type SymbolId = usize;
@@ -109,12 +159,12 @@ impl SymbolTable {
         builtins_symbol_table()
     }
 
-    pub fn put_symbol(&mut self, val: String) -> SymbolId {
-        match self.str_to_id.get(&val) {
+    pub fn put_symbol(&mut self, val: &str) -> SymbolId {
+        match self.str_to_id.get(val) {
             Some(id) => *id,
             None => {
-                self.id_to_str.push(val.clone());
-                self.str_to_id.insert(val, self.id_to_str.len() - 1);
+                self.id_to_str.push(val.into());
+                self.str_to_id.insert(val.into(), self.id_to_str.len() - 1);
                 self.id_to_str.len() - 1
             }
         }
