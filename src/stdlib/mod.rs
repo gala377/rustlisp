@@ -52,15 +52,15 @@ macro_rules! native_fn {
 }
 
 #[macro_export]
-macro_rules! native_module {
+macro_rules! native_functions {
     () => {};
     (typed $name:ident ($vm:ident, $( $args:pat ),* ) $(=>)? $body:expr ; $($rest:tt)* ) => {
         crate::native_typed_fn!{ $name ( $vm, $( $args ),* ) $body }
-        crate::native_module!{ $($rest)* }
+        crate::native_functions!{ $($rest)* }
     };
     ($name:ident ($vm:ident, $args:ident ) $(=>)? $body:expr ; $($rest:tt)*) => {
         crate::native_untyped_fn!{ $name ( $vm, $args ) $body }
-        crate::native_module!{ $($rest)* }
+        crate::native_functions!{ $($rest)* }
     };
 }
 
@@ -191,7 +191,7 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
 
 use RootedVal::*;
 
-native_module! {
+native_functions! {
     typed less_than(vm, NumberVal(a), NumberVal(b)) =>
         RootedVal::predicate(*a < *b);
 

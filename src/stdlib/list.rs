@@ -1,8 +1,8 @@
-use crate::{native_module, runtime::RootedVal};
+use crate::{native_functions, runtime::RootedVal};
 
 use crate::runtime::RootedVal::*;
 
-native_module! {
+native_functions! {
     make_list(vm, args) => RootedVal::list_from_rooted(args, &mut vm.heap);
 
     is_list(vm, args) {

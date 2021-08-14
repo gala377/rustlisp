@@ -1,4 +1,4 @@
-use crate::{native::Dispatch, native_module, register_native_type, runtime::RootedVal};
+use crate::{native::Dispatch, native_functions, register_native_type, runtime::RootedVal};
 
 struct Int(i64);
 
@@ -24,7 +24,7 @@ register_native_type!(Int);
 
 use RootedVal::*;
 
-native_module! {
+native_functions! {
     typed new_counter(vm, NumberVal(start)) {
         RootedVal::user_type(Int(*start as i64), &mut vm.heap)
     };
