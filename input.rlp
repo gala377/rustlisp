@@ -22,7 +22,6 @@
 (print "AFTER FIRST ASSERT")
 (exported "dupa")
 (print "AFTER SECOND ASSERT")
-(print-globals)
 (my-func (to-str CONST-VAL))
 
 
@@ -31,7 +30,6 @@
 (print (+ "Expected: REWRITTEN " "got: " (using-old-rewrite)))
 (print (+ "this crashes?" this-crashes))
 (print "ending main module")
-(print-globals)
 
 (print "Stdlib test")
 (def to-ten (std/coll/range 10))
@@ -51,3 +49,6 @@
 (supports-rest 1 2 3 4 5 6)
 (supports-rest 1 2 3 )
 (supports-rest 1 2 3 4 )
+
+(print-modules)
+(print-module-globals "std/intrinsic")

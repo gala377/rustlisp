@@ -85,7 +85,7 @@ impl EnvironmentImpl {
 }
 
 
-struct NativeModule {
+pub struct NativeModule {
     pub path: &'static str,
     pub items: HashMap<String, WeakVal>,
 }
@@ -102,8 +102,8 @@ impl NativeModule {
         Self { path, items }
     }
 
-    pub fn insert_item(&mut self, key: String, val: WeakVal) {
-        if let None = self.items.insert(key, val) {
+    pub fn insert_item(&mut self, key: impl Into<String>, val: WeakVal) {
+        if let Some(_) = self.items.insert(key.into(), val) {
             panic!("Item already defined")
         }
     }
@@ -131,6 +131,17 @@ impl NativeModule {
                 );
             }
         }
+    }
+}
+
+#[macro_export]
+macro_rules! def_module {
+    ($vm:ident, $module_name:literal, { $($name:literal => $func:expr ),+ $(,)?}) => {
+        let mut module = $crate::env::NativeModule::new($module_name);
+        $(
+            module.insert_item($name, $crate::runtime::WeakVal::native_function($func))
+        );+;
+        module.add_into_vm($vm);
     }
 }
 

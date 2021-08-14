@@ -1,12 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{
-    check_ptr,
-    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
-    eval::{Interpreter, ModuleState},
-    gc::HeapMarked,
-    runtime::{RootedVal, WeakVal},
-};
+use crate::{check_ptr, def_module, env::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, eval::{Interpreter, ModuleState}, gc::HeapMarked, runtime::{RootedVal, WeakVal}};
 
 mod list;
 mod load;
@@ -86,7 +80,14 @@ pub fn empty_env(symbol_table: &mut SymbolTable) -> Environment {
 }
 
 pub fn add_std_lib(vm: &mut Interpreter) {
+    define_native_modules(vm);
     load::load_from_file(vm, "stdlib/lib.rlp".into(), false);
+}
+
+fn define_native_modules(vm: &mut Interpreter) {
+    def_module!(vm, "std/intrinsic", {
+        "print-globals" => print_globals,
+    });
 }
 
 fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &mut SymbolTable) {
@@ -184,7 +185,13 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "assert" => assert_impl,
         "assert-equal" => assert_equal_impl,
         "assert-true" => assert_true_impl,
-        "print-globals" => print_globals,
+        "print-module-globals" => print_module_globals,
+        "print-modules" => |vm, _| {
+            for module in &vm.modules {
+                println!("Module {}", module.0)
+            }
+            RootedVal::none()
+        },
         "panic!" => panic_impl,
     });
 }
@@ -205,6 +212,23 @@ native_functions! {
             let printable = v.repr(&vm.heap, &vm.symbols);
             let symbol = vm.symbols[*k].clone();
             println!("\t{:20}|{}", symbol, printable);
+        }
+        RootedVal::none()
+    };
+
+    typed print_module_globals(vm, StringVal(module)) {
+        let mod_path = vm.get_mut(module).clone();
+        println!("Printing globals for module {}", mod_path);
+        match vm.modules.get(&mod_path) {
+            Some(ModuleState::Evaluating) => println!("Module evaluating"),
+            Some(ModuleState::Evaluated(ref globals)) => {
+                for (k, v) in &globals.borrow().values {
+                    let printable = v.repr(&vm.heap, &vm.symbols);
+                    let symbol = vm.symbols[*k].clone();
+                    println!("\t{:20}|{}", symbol, printable);
+                }
+            }
+            None => panic!("Unknown module"),
         }
         RootedVal::none()
     };
