@@ -119,7 +119,7 @@ impl<T: ?Sized> RawPtrBox<T> {
 
 #[repr(transparent)]
 pub struct Root<T: ?Sized> {
-    ptr: ptr::NonNull<RawPtrBox<T>>,
+    ptr: Cell<ptr::NonNull<RawPtrBox<T>>>,
     _phantom: PhantomData<T>,
 }
 
@@ -131,7 +131,7 @@ impl<T> PartialEq for Root<T> {
 
 impl<T> Root<T> {
     pub unsafe fn inner_cell(&self) -> *const UnsafeCell<T> {
-        &self.ptr.as_ref().value as *const UnsafeCell<T>
+        &self.ptr.get().as_ref().value as *const UnsafeCell<T>
     }
 
     /// Casts `Root` between types.
@@ -141,7 +141,7 @@ impl<T> Root<T> {
     /// If that is not uphold then dereferencing the pointer is UB.
     pub unsafe fn cast<U>(self) -> Root<U> {
         let new_ptr = Root {
-            ptr: self.ptr.cast::<RawPtrBox<U>>(),
+            ptr: Cell::new(self.ptr.get().cast::<RawPtrBox<U>>()),
             _phantom: PhantomData,
         };
         std::mem::forget(self);
@@ -149,10 +149,17 @@ impl<T> Root<T> {
     }
 
     pub fn downgrade(self) -> Weak<T> {
-        unsafe { self.ptr.as_ref().update_strong_count(|x| x - 1) };
-        let res = Weak { ptr: self.ptr };
+        unsafe { self.ptr.get().as_ref().update_strong_count(|x| x - 1) };
+        let res = Weak { ptr: self.ptr.get() };
         std::mem::forget(self);
         res
+    }
+
+    /// Swaps pointers inside two Roots of the same type.
+    pub fn swap(&self, other: &Root<T>) {
+        let tmp = self.ptr.get();
+        self.ptr.set(other.ptr.get());
+        other.ptr.set(tmp);
     }
 }
 
@@ -161,7 +168,7 @@ impl<T> Eq for Root<T> {}
 impl<T> Clone for Root<T> {
     fn clone(&self) -> Self {
         unsafe {
-            self.ptr.as_ref().update_strong_count(|x| x + 1);
+            self.ptr.get().as_ref().update_strong_count(|x| x + 1);
         }
         Root {
             ptr: self.ptr.clone(),
@@ -180,7 +187,7 @@ impl<T: ?Sized> ScopedRef<T> for Root<T> {
         // mutator's execution.
         // If the user implements ScopeGuard themselves it's their responsibility
         // to ensure that the rust invariants will be upheld.
-        unsafe { &*self.ptr.as_ref().value.get() }
+        unsafe { &*self.ptr.get().as_ref().value.get() }
     }
 
     fn scoped_ref_mut<'a>(&'a mut self, _guard: &'a mut dyn ScopeGuard) -> &'a mut T {
@@ -192,13 +199,13 @@ impl<T: ?Sized> ScopedRef<T> for Root<T> {
         // mutator's execution.
         // If the user implements ScopeGuard themselves it's their responsibility
         // to ensure that the rust invariants will be upheld.
-        unsafe { &mut *self.ptr.as_ref().value.get() }
+        unsafe { &mut *self.ptr.get().as_ref().value.get() }
     }
 }
 
 impl<T: ?Sized> HeapMarked for Root<T> {
     fn entry_index(&self) -> usize {
-        unsafe { self.ptr.as_ref().entry_index }
+        unsafe { self.ptr.get().as_ref().entry_index }
     }
 }
 
@@ -206,10 +213,10 @@ impl<T: ?Sized> Drop for Root<T> {
     fn drop(&mut self) {
         unsafe {
             assert!(
-                self.ptr.as_ref().strong_count.get() > 0,
+                self.ptr.get().as_ref().strong_count.get() > 0,
                 "Dropping root ptr with 0 strong count"
             );
-            self.ptr.as_ref().update_strong_count(|x| x - 1)
+            self.ptr.get().as_ref().update_strong_count(|x| x - 1)
         }
     }
 }
@@ -224,7 +231,7 @@ impl<T: ?Sized> Weak<T> {
         unsafe {
             self.ptr.as_ref().update_strong_count(|x| x + 1);
             Root {
-                ptr: self.ptr,
+                ptr: Cell::new(self.ptr),
                 _phantom: PhantomData,
             }
         }
@@ -491,7 +498,7 @@ impl Heap {
         self.entries[entry_index].data = Some(ptr.clone());
         unsafe { (*data).strong_count.set(1) };
         Root {
-            ptr: unsafe { ptr::NonNull::new_unchecked(data) },
+            ptr: Cell::new(unsafe { ptr::NonNull::new_unchecked(data) }),
             _phantom: PhantomData,
         }
     }
@@ -836,211 +843,3 @@ impl MarkSweep {
         Some(curr)
     }
 }
-
-// #[cfg(test)]
-// mod tests {
-
-//     use super::*;
-//     use crate::runtime::RootedVal;
-
-//     #[test]
-//     fn empty_heap_has_nonzero_capacity() {
-//         let heap = Heap::new();
-//         assert_ne!(heap.entries.len(), 0);
-//     }
-
-//     #[test]
-//     fn new_heap_has_correct_capacity() {
-//         let cap = 10;
-//         let heap = Heap::with_capacity(cap);
-//         assert_eq!(heap.entries.len(), cap);
-//     }
-
-//     #[test]
-//     #[should_panic]
-//     fn heap_with_capacity_zero_panics() {
-//         Heap::with_capacity(0);
-//     }
-
-//     #[test]
-//     fn new_heap_has_vacant_entry_set() {
-//         let heap = Heap::with_capacity(10);
-//         assert!(heap.first_vacant.is_some());
-//     }
-
-//     #[test]
-//     fn new_heap_has_not_set_taken_entry() {
-//         let heap = Heap::with_capacity(10);
-//         assert!(heap.first_taken.is_none());
-//     }
-
-//     #[test]
-//     fn new_heap_has_no_taken_entries() {
-//         let heap = Heap::with_capacity(10);
-//         assert!(heap.entries.iter().all(|e| e.data.is_none()))
-//     }
-
-//     #[test]
-//     fn new_heap_vacant_entries_are_linked() {
-//         let cap = 10;
-//         let heap = Heap::with_capacity(cap);
-//         let mut curr = heap.first_vacant;
-//         let mut vacant_entries = Vec::new();
-//         while let Some(i) = curr {
-//             vacant_entries.push(i);
-//             curr = heap.entries[i].header.next_node;
-//         }
-//         vacant_entries.dedup();
-//         assert_eq!(vacant_entries.len(), cap);
-//     }
-
-//     #[test]
-//     fn allocating_entry_sets_first_taken_to_first_vacant() {
-//         let mut heap = Heap::new();
-//         let first_vacant = heap.first_vacant.clone();
-//         let res = heap.allocate(String::new());
-//         assert_eq!(first_vacant, heap.first_taken);
-//         heap.drop_root(res);
-//     }
-
-//     #[test]
-//     fn allocating_last_vacant_entry_in_heap_sets_vacant_entry_to_none() {
-//         let mut heap = Heap::new();
-//         let res = heap.allocate(String::new());
-//         assert_eq!(heap.first_vacant, None);
-//         heap.drop_root(res);
-//     }
-
-//     #[test]
-//     fn allocating_with_multiple_vacant_entries_moves_vacant_entry_to_the_next() {
-//         let mut heap = Heap::with_capacity(10);
-//         let next_vacant = heap.entries[heap.first_vacant.unwrap()].header.next_node;
-//         let ptr = heap.allocate(String::new());
-//         assert_eq!(heap.first_vacant, next_vacant);
-//         heap.drop_root(ptr);
-//     }
-
-//     #[test]
-//     fn first_allocated_heap_entry_has_next_node_as_none() {
-//         let mut heap = Heap::with_capacity(10);
-//         let ptr = heap.allocate(String::new());
-//         assert_eq!(heap.entries[ptr.entry_index()].header.next_node, None);
-//         heap.drop_root(ptr);
-//     }
-
-//     #[test]
-//     fn second_allocated_entry_points_to_the_first_entry() {
-//         let mut heap = Heap::with_capacity(10);
-//         let ptr1 = heap.allocate(String::new());
-//         let ptr2 = heap.allocate(String::new());
-//         assert_eq!(
-//             heap.entries[ptr2.entry_index()].header.next_node.unwrap(),
-//             ptr1.entry_index()
-//         );
-//         heap.drop_root(ptr1);
-//         heap.drop_root(ptr2);
-//     }
-
-//     #[test]
-//     fn changing_data_through_gc_ptr_changes_data_in_heap_entry() {
-//         let mut heap = Heap::with_capacity(10);
-//         let mut ptr1 = heap.allocate(Vec::new());
-//         unsafe {
-//             ptr1.ptr
-//                 .as_mut()
-//                 .value
-//                 .get_mut()
-//                 .push(WeakVal::NumberVal(2.0))
-//         }
-//         let data_ref = *(&heap.entries[ptr1.entry_index()]
-//             .data
-//             .as_ref()
-//             .unwrap()
-//             .as_ptr());
-//         let data_ref = data_ref as *const Vec<RootedVal>;
-//         let data_ref = unsafe { data_ref.as_ref().unwrap() };
-//         let heap_entry_val = match data_ref[0] {
-//             RootedVal::NumberVal(x) => x,
-//             _ => panic!("that should not happen"),
-//         };
-//         assert_eq!(data_ref.len(), 1);
-//         assert_eq!(heap_entry_val, 2.0);
-//         heap.drop_root(ptr1);
-//     }
-
-//     #[test]
-//     fn cloned_gc_pointers_point_to_the_same_data() {
-//         let mut heap = Heap::with_capacity(10);
-//         let ptr1 = heap.allocate(String::new());
-//         let ptr2 = heap.clone_root(&ptr1);
-//         assert_eq!(ptr1.entry_index(), ptr2.entry_index());
-//         assert_eq!(ptr1.ptr.as_ptr(), ptr2.ptr.as_ptr());
-//         heap.drop_root(ptr1);
-//         heap.drop_root(ptr2);
-//     }
-
-//     #[test]
-//     fn heap_size_at_lest_doubles_after_allocating_on_full_heap() {
-//         const INITIAL_HEAP_CAPACITY: usize = 10;
-//         let mut heap = Heap::with_capacity(INITIAL_HEAP_CAPACITY);
-//         let mut allocs = Vec::new();
-//         for _ in 0..=INITIAL_HEAP_CAPACITY {
-//             allocs.push(heap.allocate(String::new()));
-//         }
-//         assert!(heap.entries.len() >= INITIAL_HEAP_CAPACITY * 2);
-//         allocs.into_iter().for_each(|x| heap.drop_root(x));
-//     }
-
-//     #[test]
-//     fn full_heap_after_growing_has_vacant_entries() {
-//         // we need to have at least capacity 2 for this test to work
-//         // as capacity 1 heap could frow to 2 in allocation and immediately
-//         // take the only vacant entry, or it could grow more as `reserve` on `Vec`
-//         // can give us more if it wants to.
-//         let mut heap = Heap::with_capacity(2);
-//         let ptr1 = heap.allocate(String::new());
-//         let ptr2 = heap.allocate(String::new());
-//         let ptr3 = heap.allocate(String::new());
-//         assert_eq!(heap.first_vacant.unwrap(), heap.entries.len() - 2);
-//         heap.drop_root(ptr1);
-//         heap.drop_root(ptr2);
-//         heap.drop_root(ptr3);
-//     }
-
-//     #[test]
-//     fn full_heap_after_growing_does_not_invalidate_pointers() {
-//         let mut heap = Heap::with_capacity(1);
-//         let mut ptr = heap.allocate(Vec::new());
-//         let ptr2 = heap.allocate(String::new());
-//         unsafe {
-//             ptr.ptr
-//                 .as_mut()
-//                 .value
-//                 .get_mut()
-//                 .push(WeakVal::NumberVal(10.0))
-//         };
-//         let data_ref = *(&heap.entries[ptr.entry_index()]
-//             .data
-//             .as_ref()
-//             .unwrap()
-//             .as_ptr());
-//         let data_ref = data_ref as *const Vec<RootedVal>;
-//         let data_ref = unsafe { data_ref.as_ref().unwrap() };
-//         let heap_entry_val = match data_ref[0] {
-//             RootedVal::NumberVal(x) => x,
-//             _ => panic!("that should not happen"),
-//         };
-//         assert_eq!(data_ref.len(), 1);
-//         assert_eq!(heap_entry_val, 10.0);
-//         heap.drop_root(ptr);
-//         heap.drop_root(ptr2);
-//     }
-
-//     #[test]
-//     fn heap_allocation_preserves_data() {
-//         let mut heap = Heap::new();
-//         let ptr = heap.allocate("Hello".to_string());
-//         assert_eq!(unsafe { (&*ptr.ptr.as_ref().value.get()).clone() }, "Hello");
-//         heap.drop_root(ptr);
-//     }
-// }
