@@ -1,4 +1,4 @@
-(macro (~> arg . funcs)
+(macro* (~> arg . funcs)
   (def (insert-1 l v)
     (unless (list? l)
       (set! l (list l)))
@@ -11,7 +11,7 @@
     (set! i (++ i)))
   curr-call)
 
-(macro (~>> arg . funcs)
+(macro* (~>> arg . funcs)
   (def (push-arg l v)
     (unless (list? l)
       (set! l (list l)))
@@ -23,5 +23,3 @@
     (set! curr-call (push-arg (nth funcs i) curr-call))
     (set! i (++ i)))
   curr-call)
-
-(export ~> ~>>)

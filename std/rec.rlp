@@ -1,4 +1,4 @@
-(def (range n)
+(def* (range n)
     (def (range i n acc)
         (push! acc i)
         (if (eq? i n )
@@ -7,7 +7,7 @@
     (range 0 n '()))
 
 
-(def (map func values)
+(def* (map func values)
     (def (map func values acc)
         (def i (length acc))
         (if (eq? i (length values))
@@ -17,5 +17,3 @@
                 (push! acc mapped)
                 (map func values acc))))
     (map func values '()))
-
-(export range map)

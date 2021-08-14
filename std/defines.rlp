@@ -15,3 +15,23 @@
     ,name
     ,@(map (lambda (x) `(quote ,x))
            renames)))
+
+(macro (def* name . body)
+  (def exported-name
+    (if (list? name)
+      (nth name 0)
+      (name)))
+  `(begin
+    (def ,name ,@body)
+    (export ,exported-name))
+)
+
+(macro (macro* name . body)
+  (def exported-name
+    (if (list? name)
+      (nth name 0)
+      (name)))
+  `(begin
+    (macro ,name ,@body)
+    (export ,exported-name))
+)

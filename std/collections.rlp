@@ -1,6 +1,6 @@
-(def (empty) '())
+(def* (empty) '())
 
-(def (map func values)
+(def* (map func values)
     (def length (length values))
     (def result '())
     (def i 0)
@@ -10,7 +10,7 @@
         (set! i (inc i)))
     result)
 
-(def (range n)
+(def* (range n)
     (def i 0)
     (def res '())
     (while (less-than i n)
@@ -18,5 +18,4 @@
         (set! i (inc i)))
     res)
 
-(export empty map range)
 

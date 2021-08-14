@@ -1,3 +1,2 @@
 (load-no-std "std/defines")
 (load-no-std "std/numeric")
-(load-no-std "std/rec")
