@@ -51,7 +51,7 @@
 (supports-rest 1 2 3 4 )
 
 (print-modules)
-(print-module-globals 'std/intrinsic)
-(def print-globals (module-lookup-item 'std/intrinsic 'print-globals))
+(print-module-globals "std/intrinsic")
+(def print-globals (module-lookup-item "std/intrinsic" 'print-globals))
 (print (repr print-globals))
 (print-globals)
