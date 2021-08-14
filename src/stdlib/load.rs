@@ -84,8 +84,8 @@ fn module_lookup_item(vm: &mut Interpreter, module: &str, item: SymbolId) -> Roo
 use crate::runtime::RootedVal::*;
 
 native_functions! {
-    typed module_lookup_item_runtime_wrapper(vm, StringVal(module), Symbol(item)) {
-        let module = vm.get_ref(module).clone();
+    typed module_lookup_item_runtime_wrapper(vm, Symbol(module), Symbol(item)) {
+        let module = vm.symbols[*module].clone() + ".rlp";
         module_lookup_item(vm, &module, *item)
     };
 }

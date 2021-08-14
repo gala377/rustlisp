@@ -217,8 +217,8 @@ native_functions! {
         RootedVal::none()
     };
 
-    typed print_module_globals(vm, StringVal(module)) {
-        let mod_path = vm.get_mut(module).clone();
+    typed print_module_globals(vm, Symbol(module)) {
+        let mod_path = vm.symbols[*module].clone() + ".rlp";
         println!("Printing globals for module {}", mod_path);
         match vm.modules.get(&mod_path) {
             Some(ModuleState::Evaluating) => println!("Module evaluating"),

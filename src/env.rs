@@ -109,7 +109,8 @@ impl NativeModule {
     }
 
     pub fn add_into_vm(self, vm: &mut Interpreter) {
-        match vm.modules.get_mut(self.path) {
+        let path = self.path.to_owned() + ".rlp";
+        match vm.modules.get_mut(&path) {
             Some(ModuleState::Evaluating) => {
                 panic!("Loading native module into currently evaluated module")
             }
@@ -126,7 +127,7 @@ impl NativeModule {
                     .map(|(name, val)| (vm.symbols.put_symbol(&name), val))
                     .collect();
                 vm.modules.insert(
-                    self.path.into(),
+                    path,
                     ModuleState::Evaluated(Environment::from(env)),
                 );
             }
