@@ -20,12 +20,13 @@
 10. More special forms (do we even have condition?)
     1. condition
 11. Rest arguments in functions
-12. Key-word args?
-13. Optional args in functions
-14. True module system maybe like in ocaml?
-15. Errors
-16. Gen-sym std-lib
-17. Stack vm (does not seem so bad but we need a compiler actually)
-18. Namespacing
-19. Objects?
-20. Iterators and coroutines would be so coool
+12. One eval macros? Like right now we can pass macros which is really ql but has a huge performance penalty
+13. Key-word args?
+14. Optional args in functions
+15. True module system maybe like in ocaml?
+16. Errors
+17. Gen-sym std-lib
+18. Stack vm (does not seem so bad but we need a compiler actually)
+19. Namespacing
+20. Objects?
+21. Iterators and coroutines would be so coool
