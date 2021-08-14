@@ -1,0 +1,10 @@
+; (assert-equal 1 0 "this should not be executed")
+
+(def a 10 ) ; (def a 100)
+
+(assert-equal a 10)
+
+(def b ; (def b 100)
+  'foo)
+
+(assert-equal b 'foo)

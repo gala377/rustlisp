@@ -41,7 +41,8 @@ impl From<&str> for Token {
 }
 
 fn tokenize(source: &str) -> Vec<Token> {
-    source
+    let comment_regex = regex::Regex::new(r#"(?m);.*$"#).unwrap();
+    let source = source
         .replace('(', " ( ")
         .replace(')', " ) ")
         .replace('\"', " \" ")
@@ -49,8 +50,10 @@ fn tokenize(source: &str) -> Vec<Token> {
         .replace('`', " ` ")
         .replace(',', " , ")
         .replace('@', " @ ")
-        .replace(" ,  @ ", " ,@ ")
-        .split_whitespace()
+        .replace(" ,  @ ", " ,@ ");
+    let source = comment_regex.replace_all(&source, "");
+    assert!(source.find(';').is_none());
+    source.split_whitespace()
         .map(Token::from)
         .collect()
 }
@@ -113,7 +116,7 @@ where
             Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table),
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table),
             Token::Unquote => parse_unquote(curr_atom, heap, symbol_table),
-            Token::Splice => parese_splice(curr_atom, heap, symbol_table),
+            Token::Splice => parse_splice(curr_atom, heap, symbol_table),
             _ => Err(ParseError::UnexpectedClosingParenthesis),
         }
     } else {
@@ -139,7 +142,7 @@ where
             Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table)?,
             Token::Unquote => parse_unquote(curr_atom, heap, symbol_table)?,
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table)?,
-            Token::Splice => parese_splice(curr_atom, heap, symbol_table)?,
+            Token::Splice => parse_splice(curr_atom, heap, symbol_table)?,
         });
     }
     Err(ParseError::UnclosedList)
@@ -220,7 +223,7 @@ where
     ))
 }
 
-fn parese_splice<It>(
+fn parse_splice<It>(
     curr_atom: &mut It,
     heap: &mut Heap,
     symbol_table: &mut SymbolTable,

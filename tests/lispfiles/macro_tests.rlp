@@ -2,15 +2,15 @@
 (macro (id a) `(list ,@a))
 (def (foo a) `(list ,@a))
 
-(assert-equal (id (1 2 3)) '(1 2 3) "Assertion failed")
-(assert-equal (foo '(1 2 3)) '(list 1 2 3) "Assertion failed")
+(assert-equal (id (1 2 3)) '(1 2 3))
+(assert-equal (foo '(1 2 3)) '(list 1 2 3))
 
 (macro (insert-1 func-call insert)
   (if (list? func-call)
     (+ (list (head func-call) insert) (tail func-call))
     (panic! "insert-1 can only be used with function calls")))
 
-(assert-equal (insert-1 (list 2 3 4) 1) '(1 2 3 4) "Assertion failed")
+(assert-equal (insert-1 (list 2 3 4) 1) '(1 2 3 4))
 
 (macro (top-level-begin a b)
   `(begin
@@ -20,5 +20,5 @@
 
 (top-level-begin foo bar)
 
-(assert-equal foo "hello" "assertion failed")
-(assert-equal bar "world" "assertion failed")
+(assert-equal foo "hello")
+(assert-equal bar "world")

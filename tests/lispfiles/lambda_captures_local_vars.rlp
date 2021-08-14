@@ -8,14 +8,14 @@
 
 (def func (foo))
 
-(assert-equal (func) '(10 20) "Assertion failed")
+(assert-equal (func) '(10 20))
 
 (def (bar)
   (let ((x 'a) (y 'b))
     (let ((z 'c) (w 'd))
       (lambda () (list x y z w)))))
 
-(assert-equal ((bar)) '(a b c d) "Assertion failed")
+(assert-equal ((bar)) '(a b c d))
 
 (def (foobar w)
  (lambda (x)
@@ -23,8 +23,8 @@
     (lambda (z)
       (list w x y z)))))
 
-(assert-equal ((((foobar 'a) 'b) 'c) 'd) '(a b c d) "Assertion failed")
-(assert-equal ((((foobar 1) 2) 3) 4) '(1 2 3 4) "Assertion failed")
+(assert-equal ((((foobar 'a) 'b) 'c) 'd) '(a b c d))
+(assert-equal ((((foobar 1) 2) 3) 4) '(1 2 3 4))
 
 (def (mutable)
   (let ((loc '()))
@@ -40,7 +40,7 @@
           (func2 (nth res 2)))
       (push! mem 1)
       (push! mem 2)
-      (assert-equal (func1) '(1 2) "this passes")
-      (assert-equal (func2) '(1 2) "This passes"))))
+      (assert-equal (func1) '(1 2))
+      (assert-equal (func2) '(1 2)))))
 
 (verify)

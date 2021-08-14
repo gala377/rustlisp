@@ -1,0 +1,11 @@
+(assert-equal 1 1 "this should pass")
+
+
+(def (test-func x) (+ x 5))
+(def (exported-func x) (~> x (+ 5) test-func))
+(def some-const 200)
+(def (return-const) some-const)
+
+(def (get-overwrite) do-not-overwrite)
+
+(def do-not-overwrite 'bar)

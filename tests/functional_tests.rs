@@ -18,4 +18,10 @@ functional_tests! {
     assert_implementations_test,
     quasiquote_form_test,
     macro_tests,
+    new_local_env_tests,
+    line_comments_test,
+    control_flow_test,
+    set_form_tests,
+    native_types_test,
+    load_function_test,
 }

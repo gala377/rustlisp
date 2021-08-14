@@ -17,7 +17,9 @@ lto = "fat"
 # for flamegraph
 debug = true
 panic = "abort"
+
 [dependencies]
+regex = "1.5"
 
 [features]
 default_features = []

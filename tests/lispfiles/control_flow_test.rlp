@@ -1,0 +1,41 @@
+(if #t
+  (assert-equal 1 1)
+  (panic! "this should not happen"))
+
+(if #f
+  (panic! "this should not happen")
+  (assert-equal 1 1 "this-should-pass"))
+
+(def (get-t) #t)
+(if (get-t)
+  (assert-equal 1 1)
+  (panic! "this should not happen"))
+
+; this one doesn't compile. Predicate needs to eval to #t or #f
+; (if 'hello
+;   (assert-equal 1 1)
+;   (panic! "this should not happen"))
+
+(def i 10)
+(while (eq? i 9)
+  (panic! "this should not be executed"))
+
+(def execute-times 10)
+(while (> execute-times 0)
+  (assert-true (> execute-times 0) "this always passes")
+  (set! execute-times (-- execute-times)))
+(assert-equal execute-times 0)
+
+(assert-equal
+  (~> "hello"
+    (+ " world")
+    (+ " again")
+    (list 1 2 3))
+  '("helloworldagain" 1 2 3))
+
+(assert-equal
+  (~>> "hello"
+    (+ " world")
+    (+ " again")
+    (list 1 2 3))
+  '(1 2 3 "againworldhello"))

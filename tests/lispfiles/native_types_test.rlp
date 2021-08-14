@@ -1,0 +1,31 @@
+
+(def counter (experiment-counter 0))
+(def (int-add c) (dispatch! c "inc" '()))
+(def (int-sub c) (dispatch! c "dev" '()))
+(def (int-val c) (dispatch! c "get" '()))
+
+(assert-equal (int-val counter) 0)
+
+(def (add-n n)
+    (def i 0)
+    (while (less-than i n)
+        (set! i (inc i))
+        (int-add counter)))
+
+(def (sub-n n)
+    (def i 0)
+    (while (less-than i n)
+        (set! i (inc i))
+        (int-sub counter)))
+
+(add-n 100)
+(assert-equal (int-val counter) 100)
+
+(add-n 50)
+(assert-equal (int-val counter) 150)
+
+(sub-n 200)
+(assert-equal (int-val counter) -50)
+
+(add-n 50)
+(assert-equal (int-val counter) 0)

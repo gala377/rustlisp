@@ -1,0 +1,14 @@
+(def do-not-overwrite 'original)
+(def some-const 'foo)
+
+(def (test-func x) x)
+
+
+(load "tests/lispfiles/helpers/load_test_helper.rlp")
+
+(assert-equal (test-func 10) 10)
+(assert-equal (exported-func 10) 20)
+(assert-equal do-not-overwrite 'original)
+(assert-equal (get-overwrite) 'bar)
+(assert-equal (return-const) 200)
+(assert-equal some-const 'foo)

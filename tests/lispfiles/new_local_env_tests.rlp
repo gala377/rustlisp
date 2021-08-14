@@ -1,0 +1,49 @@
+(def x 'foo)
+(assert-equal x 'foo "assertion failed")
+
+(let ((x 10))
+  (assert-equal x 10))
+
+(assert-equal x 'foo)
+
+; This case doesn't compile
+;
+; (let ((a 10) (b (+ a 2)))
+;  (assert-equal a 10)
+;  (assert-equal b 12)
+; )
+
+(def foo 'bar)
+(let ((a 1) (b 2))
+  (def foo 'not-bar)
+  (def a 'ten)
+  (assert-equal a 'ten)
+  (assert-equal foo 'not-bar))
+
+(assert-equal foo 'bar)
+
+(let () (def new-id 100))
+; assertion below fails
+; (assert-equal new-id 100)
+
+(let ((a 10))
+  (let ((b 100))
+    (let ()
+      (assert-equal a 10)
+      (assert-equal b 100))))
+
+(def (testing-let a b)
+    (def let-res (let ((a (+ a b)) (b b))
+        (- a b)))
+    (assert-equal let-res a)
+    (let ((c 1))
+        (+ a b c)))
+(assert (testing-let 10 3) 14 "let test failed")
+
+(def (let-with-lambda)
+    (let ((x 1) (y 2))
+        (let ((x 3) (z 4))
+            (let ((w 5))
+                (lambda () (+ x y z w))
+            ))))
+(std/testing/assert-eq? ((let-with-lambda)) 14 "Let with lambda failed")

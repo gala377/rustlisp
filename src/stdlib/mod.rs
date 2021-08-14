@@ -158,6 +158,9 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         },
         // numbers
         "less-than" => less_than,
+        "<" => less_than,
+        "greater-than" => greater_than,
+        ">" => greater_than,
 
         // native
         "dispatch!" => dispatch,
@@ -192,6 +195,9 @@ native_module! {
     typed less_than(vm, NumberVal(a), NumberVal(b)) =>
         RootedVal::predicate(*a < *b);
 
+    typed greater_than(vm, NumberVal(a), NumberVal(b)) =>
+        RootedVal::predicate(*a > *b);
+
     print_globals(vm, _args) {
         let globals = vm.get_globals();
         println!("Printing globals:");
@@ -225,7 +231,11 @@ native_module! {
     };
 
     assert_equal_impl(vm, args) {
-        let message = args.pop().unwrap();
+        let message = if args.len() == 3 {
+            args.pop()
+        } else {
+            None
+        };
         let func = vm.get_value("equal?").unwrap();
         let eq_msg = format!("{} != {}",
             args[0].repr(&vm.heap, &vm.symbols),
@@ -240,7 +250,10 @@ native_module! {
             _ => (),
         };
         match message {
-            RootedVal::StringVal(ptr) => {
+            None => {
+                panic!("Assertion failed: ({})", eq_msg);
+            }
+            Some(RootedVal::StringVal(ptr)) => {
                 check_ptr!(vm.heap, ptr);
                 let msg = vm.heap.deref_ptr(&ptr).clone();
                 panic!("{} ({})", msg, eq_msg);

@@ -1,6 +1,5 @@
 (print "start of module")
 
-(if #t (print "here if works") (print "and here it doesnt"))
 (def dont-rewrite "pls dont change")
 (def (my-func x)
 	(print "hello?")
@@ -35,10 +34,6 @@
 (print "ending main module")
 (print-globals)
 
-
-(print (if #t "this is true" (+ "this is" "false")))
-(print (if #f "this is true" (to-str (print (+ "this is" "false")))))
-
 (print "Stdlib test")
 (def to-ten (std/coll/range 10))
 (print to-ten)
@@ -47,98 +42,6 @@
 (def mapped (std/coll/map *2 to-ten))
 (print "mapped defined")
 (print mapped)
-
-(print "SET TEST")
-
-(def set_test "hello")
-(print set_test)
-(set! set_test "not hello anymore")
-(print set_test)
-
-(def list_set '(1 2 3 4 5 6))
-(print list_set)
-(set! (list_set 3) "Hello?")
-(print list_set)
-(def (set-in-func)
-    (print "this one is global")
-    (print list_set)
-    (print "now we define local")
-    (def list_set '(11 12 13 14 15))
-    (print list_set)
-    (print "now we set local")
-    (set! (list_set 2) "works?")
-    (print list_set)
-    (set! list_set "completly overiten")
-    (print list_set)
-    (print "And now we return")
-)
-(set-in-func)
-(print list_set)
-
-(def (testing-let a b)
-    (print (+ "a=" (to-str a)))
-    (print (+ "b=" (to-str b)))
-    (def let-res (let ((a (+ a b)) (b b))
-        (print "inside let")
-        (print (+ "a=" (to-str a)))
-        (print (+ "b=" (to-str b)))
-        (- a b)))
-    (assert let-res a "let res should return a")
-    (print (+ "a=" (to-str a)))
-    (print (+ "b=" (to-str b)))
-    (let ((c 1))
-        (+ a b c)))
-
-(assert (testing-let 10 3) 14 "let test failed")
-
-(def (let-with-lambda)
-    (let ((x 1) (y 2))
-        (let ((x 3) (z 4))
-            (let ((w 5))
-                (lambda () (+ x y z w))
-            ))))
-(std/testing/assert-eq? ((let-with-lambda)) 14 "Let with lambda failed")
-
-(print "experimenting with native types")
-
-(def counter (experiment-counter 0))
-(def (int-add c) (dispatch! c "inc" '()))
-(def (int-sub c) (dispatch! c "dev" '()))
-(def (int-val c) (dispatch! c "get" '()))
-(print (int-val counter))
-(def (add-n n)
-    (def i 0)
-    (while (less-than i n)
-        (set! i (inc i))
-        (int-add counter)))
-(def (sub-n n)
-    (def i 0)
-    (while (less-than i n)
-        (set! i (inc i))
-        (int-sub counter)))
-
-(def (p-c) (print (int-val counter)))
-(add-n 100)
-(p-c)
-(add-n 50)
-(p-c)
-(sub-n 200)
-(p-c)
-(add-n 50)
-(p-c)
-
-(print "Threading macro test")
-
-(print (~> "hello"
-    (+ " world")
-    (+ " world again")
-    (list 1 2 3)
-    to-str
-))
-
-(def (my-foo a b) (list a b 3 4))
-
-(std/testing/assert-equal? '(1 2 3 4) (my-foo 1 2) "this should pass")
 
 (def supports-rest (lambda (a b . rest)
     (print (to-str a))

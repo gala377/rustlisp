@@ -5,9 +5,6 @@
 (assert-equal `(1 2 (3)) '(1 2 (3)) "for simple case quasiquote is the same as quote")
 (assert-equal `(1 ("hello" '3)) '(1 ("hello" '3)) "for simple case quasiquote is the same as quote")
 
-
-
-
 (assert-equal `(1 2 ,3) '(1 2 3) "unquoting atoms is the same as quote")
 (assert-equal `(1 2 (1 2 ,"hello")) '(1 2 (1 2 "hello")) "unquoting atoms is the same as quote")
 (assert-equal `(1 2 ,'t) '(1 2 t) "unquoting atoms is the same as quote")
