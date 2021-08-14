@@ -200,8 +200,8 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         ">" => greater_than,
 
         "load" => load::load_from_file_runtime_wrapper,
-        "__load" => load::load_from_file_without_std_env_runtime_wrapper,
-        "import" => load::import_module_runtime_wrapper,
+        "load-no-std" => load::load_from_file_without_std_env_runtime_wrapper,
+        "module-import" => load::import_module_runtime_wrapper,
         "assert" => assert_impl,
         "assert-equal" => assert_equal_impl,
         "assert-true" => assert_true_impl,

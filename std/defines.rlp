@@ -1,3 +1,4 @@
+
 (def #t '#t)
 (def #f '#f)
 (def nil '())
@@ -8,3 +9,9 @@
 
 (macro (unless arg body)
   `(if ,arg none ,body))
+
+(macro (import name . renames)
+  `(module-import
+    ,name
+    ,@(map (lambda (x) `(quote ,x))
+           renames)))

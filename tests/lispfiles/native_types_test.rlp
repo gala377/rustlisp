@@ -1,6 +1,6 @@
 
-(import "std/experimental" 'counter '(counter c))
-(import "std/native" 'dispatch!)
+(import "std/experimental" counter (counter c))
+(import "std/native" dispatch!)
 
 (def counter (c 0))
 (def (int-add c) (dispatch! c "inc" '()))

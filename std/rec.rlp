@@ -1,7 +1,3 @@
-(__load "std/defines")
-(__load "std/numeric")
-
-
 (def (range n)
     (def (range i n acc)
         (push! acc i)

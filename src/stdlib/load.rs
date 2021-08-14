@@ -1,5 +1,5 @@
 use crate::{
-    env::{Environment, SymbolId, SymbolTable},
+    env::{Environment, SymbolId},
     eval::{FuncFrame, Interpreter, ModuleState},
     native_functions,
     reader::{self, AST},
@@ -88,7 +88,7 @@ struct ImportSymbol {
 }
 
 fn import_module(vm: &mut Interpreter, module_path: &str, imports: &[ImportSymbol]) {
-    let mut module = match vm.modules.get(module_path) {
+    let module = match vm.modules.get(module_path) {
         Some(ModuleState::Evaluated(module)) => module.clone(),
         Some(ModuleState::Evaluating) => panic!("Circular dependency {}", module_path),
         None => {
