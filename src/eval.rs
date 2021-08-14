@@ -97,7 +97,32 @@ impl Interpreter {
         if let RootedVal::Macro(macro_body) = &func_evaled {
             let macro_args = map_scoped_vec_range(self, vals, (1, 0), |_, val| val.as_root());
             let expanded = self.expand_macro(macro_body, macro_args);
-            return self.eval(&expanded);
+            let res = self.eval(&expanded);
+            use RootedVal::*;
+            match &expanded {
+                List(inner) => {
+                    let mut vals = vals.clone();
+                    let replace_with = self.get_ref(inner).clone();
+                    let mut code_ref = self.get_mut(&mut vals);
+                    code_ref.clear();
+                    code_ref.clone_from(&replace_with);
+                },
+                Symbol(_) | NumberVal(_) | StringVal(_) => {
+                    let wrapped = vec![
+                        WeakVal::Symbol(BuiltinSymbols::Identity as SymbolId),
+                        expanded.as_weak()];
+                    let wrapped = self.heap.allocate(wrapped);
+                    let mut vals = vals.clone();
+                    let replace_with = self.get_ref(&wrapped).clone();
+                    let mut code_ref = self.get_mut(&mut vals);
+                    code_ref.clear();
+                    code_ref.clone_from(&replace_with);
+                },
+                Func(_) | Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) => {
+                    panic!("Macro invocation returned value that cannot be evaluated")
+                }
+            }
+            return res;
         }
         let evaled = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
         self.call(&func_evaled, evaled)

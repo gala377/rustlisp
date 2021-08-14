@@ -1,5 +1,5 @@
-(import "std/testing")
-(load "std/threading")
+(import "std/testing" assert-equal?)
+(import "std/threading" ~> ~>>)
 
 (macro (id a) `(list ,@a))
 (def (foo a) `(list ,@a))
@@ -37,9 +37,46 @@
 (use-void)
 (use-void)
 
-(assert-equal i 3)
+; After expansion macro is evaluated only once
+
+(assert-equal i 1 "After expansion macro is evaluated only once")
 
 (def (pass-macro m) (m "a" (+ "b") (+ "c")))
 
-(std/testing/assert-equal? (pass-macro ~>) "abc" "Assertion failed")
-(std/testing/assert-equal? (pass-macro ~>>) "cba" "Assertion failed")
+(assert-equal? (pass-macro ~>) "abc" "Assertion failed")
+(assert-equal? (pass-macro ~>>) "abc" "When passing macro it is not reevaluated")
+
+(def foo-bar 'foo-bar)
+(def k 0)
+(macro (expand-a a)
+  (set! k (++ k))
+  `(expand-b ,a))
+
+(macro (expand-b a)
+  (set! k (++ k))
+  `(expand-c ,a))
+
+(macro (expand-c a)
+  (set! k (++ k))
+  a)
+
+(def (use-expand-a)
+  (expand-a foo-bar))
+
+(assert-equal? (use-expand-a) 'foo-bar "Use expand returns foo-bar")
+(use-expand-a)
+(use-expand-a)
+(use-expand-a)
+(assert-equal? k 3 "K should be incremented only 3 times")
+
+(def (lazy-macros m)
+  (lambda () (m "a"
+    (+ "b")
+    (+ "c"))))
+
+(def lazy-a (lazy-macros ~>))
+(def lazy-b (lazy-macros ~>>))
+
+
+(assert-equal? (lazy-b) "cba" "Lazy expansion b")
+(assert-equal? (lazy-a) "cba" "Lazy expansion a")
