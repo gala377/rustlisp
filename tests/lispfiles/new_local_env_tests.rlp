@@ -46,4 +46,4 @@
             (let ((w 5))
                 (lambda () (+ x y z w))
             ))))
-(std/testing/assert-eq? ((let-with-lambda)) 14 "Let with lambda failed")
+(std::testing::assert-eq? ((let-with-lambda)) 14 "Let with lambda failed")

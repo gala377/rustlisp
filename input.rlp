@@ -32,11 +32,11 @@
 (print "ending main module")
 
 (print "Stdlib test")
-(def to-ten (std/coll/range 10))
+(def to-ten (std::coll::range 10))
 (print to-ten)
 (def (*2 x) (+ x x))
 (print "function defined")
-(def mapped (std/coll/map *2 to-ten))
+(def mapped (std::coll::map *2 to-ten))
 (print "mapped defined")
 (print mapped)
 
@@ -55,3 +55,7 @@
 (def print-globals (module-lookup-item "std/intrinsic" 'print-globals))
 (print (repr print-globals))
 (print-globals)
+
+(print '(std/intrinsic/print-globals))
+
+(std/intrinsic/print-globals)

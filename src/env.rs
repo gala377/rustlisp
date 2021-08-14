@@ -1,4 +1,7 @@
-use crate::{eval::{Interpreter, ModuleState}, runtime::WeakVal};
+use crate::{
+    eval::{Interpreter, ModuleState},
+    runtime::WeakVal,
+};
 use std::{
     borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc,
 };
@@ -84,7 +87,6 @@ impl EnvironmentImpl {
     }
 }
 
-
 pub struct NativeModule {
     pub path: &'static str,
     pub items: HashMap<String, WeakVal>,
@@ -126,10 +128,8 @@ impl NativeModule {
                     .into_iter()
                     .map(|(name, val)| (vm.symbols.put_symbol(&name), val))
                     .collect();
-                vm.modules.insert(
-                    path,
-                    ModuleState::Evaluated(Environment::from(env)),
-                );
+                vm.modules
+                    .insert(path, ModuleState::Evaluated(Environment::from(env)));
             }
         }
     }
@@ -332,5 +332,6 @@ generate_builtin_symbols! {
         ("let": 14) => Let,
         ("unquote-splice": 15) => Splice,
         (".": 16) => Dot,
+        ("module-lookup-item": 17) => ModuleLookupItem,
     }
 }

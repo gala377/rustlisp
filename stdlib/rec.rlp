@@ -2,7 +2,7 @@
 (__load "stdlib/numeric.rlp")
 
 
-(def (std/rec/range n)
+(def (std::rec::range n)
     (def (range i n acc)
         (push! acc i)
         (if (eq? i n )
@@ -11,7 +11,7 @@
     (range 0 n '()))
 
 
-(def (std/rec/map func values)
+(def (std::rec::map func values)
     (def (map func values acc)
         (def i (length acc))
         (if (eq? i (length values))

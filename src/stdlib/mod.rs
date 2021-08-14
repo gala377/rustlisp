@@ -1,6 +1,12 @@
 use std::{collections::HashMap, rc::Rc};
 
-use crate::{check_ptr, def_module, env::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, eval::{Interpreter, ModuleState}, gc::HeapMarked, runtime::{RootedVal, WeakVal}};
+use crate::{
+    check_ptr, def_module,
+    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
+    eval::{Interpreter, ModuleState},
+    gc::HeapMarked,
+    runtime::{RootedVal, WeakVal},
+};
 
 mod list;
 mod load;

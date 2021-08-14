@@ -110,7 +110,7 @@ where
         match atom {
             Token::LeftBracket => parse_list(curr_atom, heap, symbol_table),
             Token::Quote => parse_string(curr_atom, heap),
-            Token::Val(val) => parse_atom(val, symbol_table),
+            Token::Val(val) => parse_atom(val, heap, symbol_table),
             Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table),
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table),
             Token::Unquote => parse_unquote(curr_atom, heap, symbol_table),
@@ -136,7 +136,7 @@ where
             Token::RightBracket => return Ok(RootedVal::list_from_rooted(list, heap)),
             Token::LeftBracket => parse_list(curr_atom, heap, symbol_table)?,
             Token::Quote => parse_string(curr_atom, heap)?,
-            Token::Val(val) => parse_atom(val, symbol_table)?,
+            Token::Val(val) => parse_atom(val, heap, symbol_table)?,
             Token::SymbolQuote => parse_quote(curr_atom, heap, symbol_table)?,
             Token::Unquote => parse_unquote(curr_atom, heap, symbol_table)?,
             Token::QuasiQuote => parse_quasiquote(curr_atom, heap, symbol_table)?,
@@ -238,11 +238,36 @@ where
     ))
 }
 
-fn parse_atom(curr_atom: String, symbol_table: &mut SymbolTable) -> Result<RootedVal, ParseError> {
+fn parse_atom(
+    curr_atom: String,
+    heap: &mut Heap,
+    symbol_table: &mut SymbolTable,
+) -> Result<RootedVal, ParseError> {
     // `parse` resolves to `f64`.
     // It also handles negative numbers.
     match curr_atom.parse() {
         Ok(val) => Ok(RootedVal::NumberVal(val)),
-        Err(_) => Ok(RootedVal::Symbol(symbol_table.put_symbol(&curr_atom))),
+        Err(_) => {
+            // TODO: Could be much simpler if `str::rsplit_once` gets stabilized
+            let segments: Vec<&str> = curr_atom.split('/').collect();
+            match &segments[..] {
+                [identifier] => Ok(RootedVal::Symbol(symbol_table.put_symbol(identifier))),
+                [module @ .., name] => Ok(RootedVal::list_from_rooted(
+                    vec![
+                        RootedVal::Symbol(BuiltinSymbols::ModuleLookupItem as SymbolId),
+                        RootedVal::string(module.join("/"), heap),
+                        RootedVal::list_from_rooted(
+                            vec![
+                                RootedVal::Symbol(BuiltinSymbols::Quote as SymbolId),
+                                RootedVal::Symbol(symbol_table.put_symbol(name)),
+                            ],
+                            heap,
+                        ),
+                    ],
+                    heap,
+                )),
+                _ => unreachable!(),
+            }
+        }
     }
 }
