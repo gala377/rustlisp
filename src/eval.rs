@@ -69,7 +69,7 @@ impl Interpreter {
         if let Some(env) = self.get_locals() {
             let mut env = env.clone();
             loop {
-                if let Some(val) = env.borrow().values.get(&expr) {
+                if let Some(val) = env.get(expr) {
                     return val.as_root();
                 }
                 if let Some(val) = env.into_parent() {
@@ -80,11 +80,8 @@ impl Interpreter {
             }
         }
         self.get_globals()
-            .borrow()
-            .values
-            .get(&expr)
+            .get(expr)
             .expect(&format!("symbol {} not defined", self.symbols[expr]))
-            .clone()
             .upgrade()
     }
 
@@ -204,6 +201,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::While) => Ok(self.eval_while(vals)),
             Ok(BuiltinSymbols::Set) => Ok(self.eval_set(vals)),
             Ok(BuiltinSymbols::Let) => Ok(self.eval_let(vals)),
+            Ok(BuiltinSymbols::Export) => Ok(self.eval_export(vals)),
             Ok(BuiltinSymbols::Splice) => panic!("unquote-splicing is not quasiquote context"),
             _ => Err(NotSpecialForm),
         }
@@ -252,10 +250,7 @@ impl Interpreter {
         match constr {
             Pattern::Value { name, ref val } => {
                 let evaled = self.eval_weak(val);
-                create_env
-                    .borrow_mut()
-                    .values
-                    .insert(name.clone(), evaled.downgrade());
+                create_env.insert_binding(name, evaled.downgrade());
             }
             Pattern::Function { name, args, body } => {
                 let body = prepare_function_body(body, &mut self.heap);
@@ -263,9 +258,7 @@ impl Interpreter {
                 let function =
                     RootedVal::function(name, args, body.downgrade(), globals, &mut self.heap);
                 create_env
-                    .borrow_mut()
-                    .values
-                    .insert(name.clone(), function.downgrade());
+                    .insert_binding(name, function.downgrade());
             }
         }
         RootedVal::none()
@@ -296,9 +289,7 @@ impl Interpreter {
         let globals = self.get_globals();
         let macro_val = RootedVal::macro_val(name, args, body.downgrade(), globals, &mut self.heap);
         self.get_globals()
-            .borrow_mut()
-            .values
-            .insert(name.clone(), macro_val.downgrade());
+            .insert_binding(name, macro_val.downgrade());
         RootedVal::none()
     }
 
@@ -562,31 +553,26 @@ impl Interpreter {
         res
     }
 
-    #[cfg(debug)]
-    #[inline]
-    pub fn get_ref<'a, T, Ptr>(&'a self, ptr: &'a Ptr) -> ScopedPtr<T>
-    where
-        Ptr: ScopedRef<T> + HeapMarked,
-    {
-        self.heap.deref_ptr(ptr)
+    pub fn eval_export(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
+        assert!(
+            self.get_locals().is_none(),
+            "You can only export in top level"
+        );
+        let exports: Vec<_> = self.get_ref(expr).iter().skip(1).cloned().collect();
+        for export in exports {
+            match export {
+                WeakVal::Symbol(s) => self.get_globals().export(s),
+                _ => panic!("Expected identifier in export form"),
+            }
+        }
+        RootedVal::none()
     }
 
-    #[cfg(not(debug))]
     #[inline]
     pub fn get_ref<'a, T>(&'a self, ptr: &'a impl ScopedRef<T>) -> ScopedPtr<T> {
         self.heap.deref_ptr(ptr)
     }
 
-    #[cfg(debug)]
-    #[inline]
-    pub fn get_mut<'a, T, Ptr>(&'a mut self, ptr: &'a mut Ptr) -> ScopedMutPtr<T>
-    where
-        Ptr: ScopedRef<T> + HeapMarked,
-    {
-        self.heap.deref_ptr_mut(ptr)
-    }
-
-    #[cfg(not(debug))]
     #[inline]
     pub fn get_mut<'a, T>(&'a mut self, ptr: &'a mut impl ScopedRef<T>) -> ScopedMutPtr<T> {
         self.heap.deref_ptr_mut(ptr)
@@ -655,22 +641,21 @@ fn populate_env(
         "Not enough call function args"
     );
     {
-        let func_env_map = &mut env.borrow_mut().values;
         for i in 0..args.positional.len() {
-            func_env_map.insert(args.positional[i].clone(), values[i].as_weak());
+            env.insert_binding(args.positional[i].clone(), values[i].as_weak());
         }
         let rest_start_index = args.positional.len();
         let has_values_for_rest = values.len() > rest_start_index;
         match &args.rest {
             Some(name) if has_values_for_rest => {
                 let rest_arg_value = values[rest_start_index..].iter().cloned().collect();
-                func_env_map.insert(
+                env.insert_binding(
                     *name,
                     RootedVal::list_from_rooted(rest_arg_value, heap).as_weak(),
                 );
             }
             Some(name) => {
-                func_env_map.insert(*name, RootedVal::nil(heap).as_weak());
+                env.insert_binding(*name, RootedVal::nil(heap).as_weak());
             }
             None if has_values_for_rest => panic!("Call supplied more arguments than expected"),
             None => (),

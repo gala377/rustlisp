@@ -17,3 +17,5 @@
                 (push! acc mapped)
                 (map func values acc))))
     (map func values '()))
+
+(export range map)

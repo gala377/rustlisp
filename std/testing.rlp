@@ -16,3 +16,5 @@
               (eq-msg (+ (to-str ,a) "!=" (to-str ,b))))
             (let ((final-msg (+ ,msg ":" obj-repr " " eq-msg)))
                 (panic! final-msg)))))
+
+(export assert assert-equal? assert-eq?)

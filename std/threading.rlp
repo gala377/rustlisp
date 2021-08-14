@@ -23,3 +23,5 @@
     (set! curr-call (push-arg (nth funcs i) curr-call))
     (set! i (++ i)))
   curr-call)
+
+(export ~> ~>>)

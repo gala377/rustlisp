@@ -1,3 +1,6 @@
+
+(import "std/threading" ~> ~>>)
+
 (if #t
   (assert-equal 1 1)
   (panic! "this should not happen"))
@@ -26,7 +29,6 @@
   (set! execute-times (-- execute-times)))
 (assert-equal execute-times 0)
 
-(load "std/threading")
 
 (assert-equal
   (~> "hello"

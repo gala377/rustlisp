@@ -18,3 +18,5 @@
         (set! i (inc i)))
     res)
 
+(export empty map range)
+

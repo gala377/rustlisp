@@ -6,9 +6,21 @@ use std::{
     borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc,
 };
 
+#[derive(Clone)]
+pub struct Metadata {
+    pub exported: bool,
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Self { exported: false }
+    }
+}
+
 pub struct EnvironmentImpl {
     pub parent: Option<Environment>,
     pub values: HashMap<SymbolId, WeakVal>,
+    pub metadata: HashMap<SymbolId, Metadata>,
 }
 
 #[derive(Clone)]
@@ -25,10 +37,11 @@ impl Environment {
 
     pub fn update_with(&mut self, other: Environment) {
         let inner = other.borrow();
-        let self_map = &mut self.borrow_mut().values;
+        let self_map = &mut self.borrow_mut();
         inner.values.iter().for_each(|(key, val)| {
             // println!("Merging with symbol {}", key);
-            self_map.entry(*key).or_insert(val.clone());
+            self_map.values.entry(*key).or_insert(val.clone());
+            self_map.metadata.entry(*key).or_default();
         });
     }
 
@@ -38,6 +51,7 @@ impl Environment {
         Self(Rc::new(RefCell::new(EnvironmentImpl {
             parent: inner.parent.clone().map(Self::split),
             values: inner.values.clone(),
+            metadata: inner.metadata.clone(),
         })))
     }
 
@@ -60,12 +74,51 @@ impl Environment {
     pub fn into_parent(self) -> Option<Environment> {
         (*self.0).borrow().parent.clone()
     }
+
+    pub fn get_value(&self, symbol: SymbolId) -> Option<WeakVal> {
+        (*self.0).borrow().values.get(&symbol).map(WeakVal::clone)
+    }
+
+    pub fn from_map_exported(values: HashMap<SymbolId, WeakVal>) -> Self {
+        Self(Rc::new(RefCell::new(EnvironmentImpl {
+            parent: None,
+            metadata: values
+                .keys()
+                .map(|k| (*k, Metadata { exported: true }))
+                .collect(),
+            values,
+        })))
+    }
+
+    pub fn export(&mut self, symbol: SymbolId) {
+        match (*self.0).borrow_mut().metadata.get_mut(&symbol) {
+            None => panic!("Trying to export non existing symbol"),
+            Some(metadata) => metadata.exported = true,
+        }
+    }
+
+    pub fn is_exported(&self, symbol: SymbolId) -> bool {
+        match (*self.0).borrow().metadata.get(&symbol) {
+            None => panic!("Checking metadata of nonexistent symbol"),
+            Some(m) => m.exported
+        }
+    }
+
+    pub fn get(&self, symbol: SymbolId) -> Option<WeakVal> {
+        (*self.0).borrow().values.get(&symbol).map(WeakVal::clone)
+    }
+
+    pub fn insert_binding(&mut self, symbol: SymbolId, val: WeakVal) {
+        (*self.0).borrow_mut().values.insert(symbol, val);
+        (*self.0).borrow_mut().metadata.entry(symbol).or_default();
+    }
 }
 
 impl From<HashMap<SymbolId, WeakVal>> for Environment {
     fn from(values: HashMap<SymbolId, WeakVal>) -> Self {
         Self(Rc::new(RefCell::new(EnvironmentImpl {
             parent: None,
+            metadata: values.keys().map(|k| (*k, Metadata::default())).collect(),
             values,
         })))
     }
@@ -76,6 +129,7 @@ impl EnvironmentImpl {
         Self {
             parent: None,
             values: HashMap::new(),
+            metadata: HashMap::new(),
         }
     }
 
@@ -83,6 +137,7 @@ impl EnvironmentImpl {
         Self {
             parent: Some(parent),
             values: HashMap::new(),
+            metadata: HashMap::new(),
         }
     }
 }
@@ -128,8 +183,10 @@ impl NativeModule {
                     .into_iter()
                     .map(|(name, val)| (vm.symbols.put_symbol(&name), val))
                     .collect();
-                vm.modules
-                    .insert(path, ModuleState::Evaluated(Environment::from(env)));
+                vm.modules.insert(
+                    path,
+                    ModuleState::Evaluated(Environment::from_map_exported(env)),
+                );
             }
         }
     }
@@ -333,5 +390,6 @@ generate_builtin_symbols! {
         ("unquote-splice": 15) => Splice,
         (".": 16) => Dot,
         ("module-lookup-item": 17) => ModuleLookupItem,
+        ("export": 18) => Export,
     }
 }
