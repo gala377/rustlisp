@@ -36,3 +36,8 @@
 (use-void)
 
 (assert-equal i 3)
+
+(def (pass-macro m) (m "a" (+ "b") (+ "c")))
+
+(std/testing/assert-equal? (pass-macro ~>) "abc" "Assertion failed")
+(std/testing/assert-equal? (pass-macro ~>>) "cba" "Assertion failed")
