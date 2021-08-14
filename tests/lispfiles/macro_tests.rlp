@@ -22,3 +22,17 @@
 
 (assert-equal foo "hello")
 (assert-equal bar "world")
+
+(def i 0)
+(macro (void x)
+  (set! i (++ i))
+  none)
+
+(def (use-void)
+  (void a))
+
+(use-void)
+(use-void)
+(use-void)
+
+(assert-equal i 3)

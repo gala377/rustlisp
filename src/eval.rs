@@ -53,16 +53,7 @@ impl Interpreter {
     }
 
     pub fn eval(&mut self, expr: &RootedVal) -> RootedVal {
-        self.eval_rooted(expr)
-    }
-
-    fn eval_rooted(&mut self, expr: &RootedVal) -> RootedVal {
-        match expr {
-            RootedVal::NumberVal(_) | RootedVal::StringVal(_) => expr.clone(),
-            RootedVal::Symbol(val) => self.eval_symbol(*val),
-            RootedVal::List(val) => self.eval_list(val),
-            _ => panic!("Cannot evaluate this node"),
-        }
+        self.eval_weak(&expr.as_weak())
     }
 
     fn eval_weak(&mut self, expr: &WeakVal) -> RootedVal {
@@ -97,9 +88,7 @@ impl Interpreter {
             .upgrade()
     }
 
-    fn eval_list<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_list(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         if self.get_ref(vals).is_empty() {
             return RootedVal::nil(&mut self.heap);
@@ -185,7 +174,7 @@ impl Interpreter {
             },
             |vm| vm.eval_weak(&func_body),
         );
-        self.eval_rooted(&res)
+        self.eval(&res)
     }
 
     fn with_frame<R>(&mut self, frame: FuncFrame, func: impl FnOnce(&mut Self) -> R) -> R {
@@ -195,9 +184,7 @@ impl Interpreter {
         res
     }
 
-    fn try_eval_special_form<Ptr>(&mut self, vals: &Ptr) -> Result<RootedVal, NotSpecialForm>
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn try_eval_special_form(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> Result<RootedVal, NotSpecialForm>
     {
         let symbol = match &self.get_ref(vals)[0] {
             WeakVal::Symbol(val) => *val,
@@ -220,9 +207,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_define<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_define(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         enum Pattern {
             Value {
@@ -285,9 +270,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_macro<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_macro(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         struct MacroConstructor {
             pub name: SymbolId,
@@ -319,9 +302,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_lambda<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_lambda(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         let locals = self
             .get_locals()
@@ -339,18 +320,14 @@ impl Interpreter {
         RootedVal::lambda(locals, args, body.downgrade(), globals, &mut self.heap)
     }
 
-    fn eval_begin<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_begin(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val))
             .pop()
             .unwrap()
     }
 
-    fn eval_quote<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_quote(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         assert_eq!(
             self.get_ref(vals).len(),
@@ -362,9 +339,7 @@ impl Interpreter {
         self.get_ref(vals)[1].as_root()
     }
 
-    fn eval_quasiquote<Ptr>(&mut self, vals: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_quasiquote(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         assert_eq!(
             self.get_ref(vals).len(),
@@ -449,9 +424,7 @@ impl Interpreter {
         true
     }
 
-    fn eval_if<Ptr>(&mut self, expr: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_if(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         assert_eq!(
             self.get_ref(expr).len(),
@@ -473,9 +446,7 @@ impl Interpreter {
         self.eval_weak(&eval_next)
     }
 
-    fn eval_while<Ptr>(&mut self, expr: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_while(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         assert!(
             self.get_ref(expr).len() > 2,
@@ -491,9 +462,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_set<Ptr>(&mut self, expr: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_set(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         assert_eq!(self.get_ref(expr).len(), 3, "set form takes 2 arguments");
         let location = self.get_ref(expr)[1].clone();
@@ -553,9 +522,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_let<Ptr>(&mut self, expr: &Ptr) -> RootedVal
-    where
-        Ptr: ScopedRef<Vec<WeakVal>>,
+    fn eval_let(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
     {
         let size = self.get_ref(expr).len();
         assert!(size > 2, "let form needs at least 2 arguments");
