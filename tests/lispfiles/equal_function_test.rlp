@@ -5,7 +5,7 @@
 (def (simple-func a b) (+ a b))
 
 
-(assert-true (eq? 1 1) "this passes")
+(assert-true (eq? 2 1) "this passes")
 (assert-true (eq? my-list my-list) "this passes")
 (assert-true (eq? my-string my-string) "this passes")
 (assert-true (eq? my-lambda my-lambda) "this passes")

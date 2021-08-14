@@ -53,9 +53,7 @@ fn tokenize(source: &str) -> Vec<Token> {
         .replace(" ,  @ ", " ,@ ");
     let source = comment_regex.replace_all(&source, "");
     assert!(source.find(';').is_none());
-    source.split_whitespace()
-        .map(Token::from)
-        .collect()
+    source.split_whitespace().map(Token::from).collect()
 }
 
 /// Abstract representation of an unevaluated program as a tree structure.

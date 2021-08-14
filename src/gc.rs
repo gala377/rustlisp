@@ -150,7 +150,9 @@ impl<T> Root<T> {
 
     pub fn downgrade(self) -> Weak<T> {
         unsafe { self.ptr.get().as_ref().update_strong_count(|x| x - 1) };
-        let res = Weak { ptr: Cell::new(self.ptr.get()) };
+        let res = Weak {
+            ptr: Cell::new(self.ptr.get()),
+        };
         std::mem::forget(self);
         res
     }

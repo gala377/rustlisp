@@ -88,8 +88,7 @@ impl Interpreter {
             .upgrade()
     }
 
-    fn eval_list(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_list(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         if self.get_ref(vals).is_empty() {
             return RootedVal::nil(&mut self.heap);
         }
@@ -100,7 +99,8 @@ impl Interpreter {
         let func_evaled = self.eval_weak(&func);
         if let RootedVal::Macro(macro_body) = &func_evaled {
             let macro_args = map_scoped_vec_range(self, vals, (1, 0), |_, val| val.as_root());
-            return self.expand_macro(macro_body, macro_args);
+            let expanded = self.expand_macro(macro_body, macro_args);
+            return self.eval(&expanded);
         }
         let evaled = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
         self.call(&func_evaled, evaled)
@@ -132,7 +132,8 @@ impl Interpreter {
                         func.globals.clone(),
                     )
                 };
-                let func_env = func_call_env_with_parent(&func_args, args, func_env, &mut self.heap);
+                let func_env =
+                    func_call_env_with_parent(&func_args, args, func_env, &mut self.heap);
                 self.with_frame(
                     FuncFrame {
                         globals: func_globals,
@@ -167,14 +168,13 @@ impl Interpreter {
             (func.body.clone(), func.args.clone(), func.globals.clone())
         };
         let func_env = func_call_env(&func_args, args, &mut self.heap);
-        let res = self.with_frame(
+        self.with_frame(
             FuncFrame {
                 globals: func_globals,
                 locals: Some(func_env),
             },
             |vm| vm.eval_weak(&func_body),
-        );
-        self.eval(&res)
+        )
     }
 
     fn with_frame<R>(&mut self, frame: FuncFrame, func: impl FnOnce(&mut Self) -> R) -> R {
@@ -184,8 +184,10 @@ impl Interpreter {
         res
     }
 
-    fn try_eval_special_form(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> Result<RootedVal, NotSpecialForm>
-    {
+    fn try_eval_special_form(
+        &mut self,
+        vals: &gc::Weak<Vec<WeakVal>>,
+    ) -> Result<RootedVal, NotSpecialForm> {
         let symbol = match &self.get_ref(vals)[0] {
             WeakVal::Symbol(val) => *val,
             _ => return Err(NotSpecialForm),
@@ -207,8 +209,7 @@ impl Interpreter {
         }
     }
 
-    fn eval_define(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_define(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         enum Pattern {
             Value {
                 name: SymbolId,
@@ -270,8 +271,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_macro(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_macro(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         struct MacroConstructor {
             pub name: SymbolId,
             pub args: FunctionArgs,
@@ -302,8 +302,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_lambda(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_lambda(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         let locals = self
             .get_locals()
             .map(Environment::split)
@@ -320,15 +319,13 @@ impl Interpreter {
         RootedVal::lambda(locals, args, body.downgrade(), globals, &mut self.heap)
     }
 
-    fn eval_begin(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_begin(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val))
             .pop()
             .unwrap()
     }
 
-    fn eval_quote(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_quote(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         assert_eq!(
             self.get_ref(vals).len(),
             2,
@@ -339,8 +336,7 @@ impl Interpreter {
         self.get_ref(vals)[1].as_root()
     }
 
-    fn eval_quasiquote(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_quasiquote(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         assert_eq!(
             self.get_ref(vals).len(),
             2,
@@ -424,8 +420,7 @@ impl Interpreter {
         true
     }
 
-    fn eval_if(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_if(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         assert_eq!(
             self.get_ref(expr).len(),
             4,
@@ -446,8 +441,7 @@ impl Interpreter {
         self.eval_weak(&eval_next)
     }
 
-    fn eval_while(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_while(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         assert!(
             self.get_ref(expr).len() > 2,
             "while expr needs at least 2 clauses"
@@ -462,8 +456,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_set(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_set(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         assert_eq!(self.get_ref(expr).len(), 3, "set form takes 2 arguments");
         let location = self.get_ref(expr)[1].clone();
         let val = self.get_ref(expr)[2].clone();
@@ -522,8 +515,7 @@ impl Interpreter {
         RootedVal::none()
     }
 
-    fn eval_let(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal
-    {
+    fn eval_let(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         let size = self.get_ref(expr).len();
         assert!(size > 2, "let form needs at least 2 arguments");
         let bindings = self.get_ref(expr)[1].clone();
@@ -690,7 +682,10 @@ fn populate_env(
 struct NotSpecialForm;
 
 fn collect_function_definition_arguments(args: &[WeakVal]) -> FunctionArgs {
-    let mut function_args = FunctionArgs { positional: Vec::with_capacity(2), rest: None };
+    let mut function_args = FunctionArgs {
+        positional: Vec::with_capacity(2),
+        rest: None,
+    };
     let mut rest_arg = false;
     for arg in args {
         if let WeakVal::Symbol(name) = arg {
@@ -703,7 +698,9 @@ fn collect_function_definition_arguments(args: &[WeakVal]) -> FunctionArgs {
     }
     if rest_arg {
         match args.last() {
-            Some(WeakVal::Symbol(name)) if *name == BuiltinSymbols::Dot as usize => panic!("Rest function arg name missing"),
+            Some(WeakVal::Symbol(name)) if *name == BuiltinSymbols::Dot as usize => {
+                panic!("Rest function arg name missing")
+            }
             Some(WeakVal::Symbol(name)) => function_args.rest = Some(*name),
             Some(_) => panic!("Function rest arg name has to be a symbol"),
             None => unreachable!("To get there there has to be at least one symbol"),
