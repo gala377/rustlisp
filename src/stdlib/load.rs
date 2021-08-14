@@ -1,9 +1,9 @@
 use crate::{
-    env::{Environment, SymbolId},
+    env::{Environment, SymbolId, SymbolTable},
     eval::{FuncFrame, Interpreter, ModuleState},
     native_functions,
     reader::{self, AST},
-    runtime::RootedVal,
+    runtime::{RootedVal, WeakVal},
     stdlib,
 };
 
@@ -81,20 +81,41 @@ fn module_lookup_item(vm: &mut Interpreter, module: &str, item: SymbolId) -> Roo
     }
 }
 
-fn import_module(vm: &mut Interpreter, module_path: &str) {
-    match vm.modules.get(module_path) {
-        Some(ModuleState::Evaluated(_)) => {},
+#[derive(Debug)]
+struct ImportSymbol {
+    pub symbol: SymbolId,
+    pub rename: Option<SymbolId>,
+}
+
+fn import_module(vm: &mut Interpreter, module_path: &str, imports: &[ImportSymbol]) {
+    let mut module = match vm.modules.get(module_path) {
+        Some(ModuleState::Evaluated(module)) => module.clone(),
         Some(ModuleState::Evaluating) => panic!("Circular dependency {}", module_path),
         None => {
             vm.modules
                 .insert(module_path.to_owned(), ModuleState::Evaluating);
-            let source =
-                std::fs::read_to_string(module_path).expect(&format!("No such path {}", module_path));
+            let source = std::fs::read_to_string(module_path)
+                .expect(&format!("No such path {}", module_path));
             let module = load_module(vm, &source, true);
             let module_entry = vm.modules.get_mut(module_path).unwrap();
             *module_entry = ModuleState::Evaluated(module.clone());
+            module
         }
     };
+    for import in imports {
+        let val = match module.borrow().values.get(&import.symbol) {
+            Some(val) => val.clone(),
+            None => panic!(
+                "Module {} does not export symbol {}",
+                module_path, vm.symbols[import.symbol]
+            ),
+        };
+        let name = match import.rename {
+            None => import.symbol,
+            Some(name) => name,
+        };
+        vm.get_globals().borrow_mut().values.insert(name, val);
+    }
 }
 
 use crate::runtime::RootedVal::*;
@@ -105,9 +126,21 @@ native_functions! {
         module_lookup_item(vm, &module, *item)
     };
 
-    typed import_module_runtime_wrapper(vm, StringVal(module)) {
+    typed import_module_runtime_wrapper(vm, StringVal(module), exports @ ..) {
         let path = vm.get_ref(module).clone() + ".rlp";
-        import_module(vm, &path);
+        let exports: Vec<_> = exports.iter().map(|val| match val {
+            List(inner) if vm.get_ref(inner).len() == 2 => {
+                let inner_ref = vm.get_ref(inner);
+                if let [WeakVal::Symbol(name), WeakVal::Symbol(rename)] = &inner_ref[..] {
+                    ImportSymbol { symbol: *name, rename: Some(*rename) }
+                } else {
+                    panic!("Imports should be symbols or lists of 2 elements - symbol to import and rename");
+                }
+            }
+            Symbol(inner) => ImportSymbol{ symbol: *inner, rename: None },
+            _ => panic!("Imports should be symbols or lists of 2 elements - symbol to import and rename"),
+        }).collect();
+        import_module(vm, &path, &exports);
         RootedVal::none()
     };
 }

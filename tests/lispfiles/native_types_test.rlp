@@ -1,8 +1,8 @@
 
-(load "std/native")
-(import "std/experimental")
+(import "std/experimental" 'counter '(counter c))
+(import "std/native" 'dispatch!)
 
-(def counter (std/experimental/counter 0))
+(def counter (c 0))
 (def (int-add c) (dispatch! c "inc" '()))
 (def (int-sub c) (dispatch! c "dev" '()))
 
