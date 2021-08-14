@@ -80,3 +80,14 @@
 
 (assert-equal? (lazy-b) "cba" "Lazy expansion b")
 (assert-equal? (lazy-a) "cba" "Lazy expansion a")
+
+(def (lazy-macros-2 m p)
+  (if p (lambda () (m "a" (+ "b") (+ "c")))
+        (lambda () (m "a" (+ "b") (+ "c")))))
+
+(def lazy-a-2 (lazy-macros-2 ~> #t))
+(def lazy-b-2 (lazy-macros-2 ~>> #f))
+
+
+(assert-equal? (lazy-b-2) "cba" "Lazy expansion b")
+(assert-equal? (lazy-a-2) "abc" "Lazy expansion a")
