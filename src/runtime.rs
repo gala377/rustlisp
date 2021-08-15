@@ -2,10 +2,10 @@ use crate::{
     env::BuiltinSymbols,
     env::{Environment, SymbolId, SymbolTable},
     eval::Interpreter,
-    gc::{self, Allocable, Heap, Root, TypeTag, Weak},
+    gc::{self, Allocable, Heap, Root, TypeTag},
     native::{NativeStruct, RootedStructPtr, WeakStructPtr},
 };
-use std::{ops::Deref, rc::Rc};
+use std::rc::Rc;
 
 #[derive(Clone)]
 pub struct FunctionArgs {
