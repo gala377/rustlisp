@@ -1,13 +1,17 @@
+(import "std/intrinsic" print-globals print-modules)
+(import "std/io" print)
 (def num-box (box 0))
 (def list-box (box (list 1 2 3 4)))
 
-(assert-equal (unbox num-box) 0)
-(assert-equal (unbox list-box) '(1 2 3 4))
-(assert-equal (unbox (box 'foo)) 'foo)
-(assert-equal (unbox (box-ref (box 'foo-bar))) 'foo-bar)
+(assert-equal (unbox num-box) 0 "1")
+(assert-equal (unbox list-box) '(1 2 3 4) "2")
+(assert-equal (unbox (box 'foo)) 'foo "3")
+(assert-equal (unbox (box-ref (box 'foo-bar))) 'foo-bar "4")
+
 
 (set! (box-ref num-box) 3)
-(assert-equal (unbox num-box) 3)
+
+(assert-equal (unbox num-box) 3 "6")
 
 (def alias list-box)
 
@@ -19,5 +23,22 @@
 (assert-equal (unbox (ret-box)) 'new-value)
 
 (set! num-box 3)
-; this does panic as num-box is now just an unboxed 3
-; (assert-equal (unbox num-box) 3)
+(assert-equal num-box 3)
+
+(def implicit-box 'hello)
+(assert-equal (unbox (box-ref implicit-box)) 'hello)
+
+(import "tests/lispfiles/helpers/box_test_helper" i inc-i read-i my-list change-list)
+
+
+(assert-equal i 0)
+(inc-i)
+(inc-i)
+
+
+(assert-equal my-list '(1 2 3))
+(change-list 0 'new-value)
+(assert-equal my-list '(new-value 2 3))
+
+(assert-equal (read-i) 2)
+(assert-equal i 2 "Our reference to i did not change")

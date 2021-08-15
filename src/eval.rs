@@ -260,9 +260,9 @@ impl Interpreter {
             },
         }
 
-        let mut create_env = match self.get_locals() {
-            None => self.get_globals(),
-            Some(val) => val.clone(),
+        let (mut create_env, box_result) = match self.get_locals() {
+            None => (self.get_globals(), true),
+            Some(val) => (val.clone(), false),
         };
         let constr = {
             let vals_ref = self.get_ref(vals);
@@ -289,14 +289,20 @@ impl Interpreter {
         };
         match constr {
             Pattern::Value { name, ref val } => {
-                let evaled = self.eval_weak(val);
+                let mut evaled = self.eval_weak(val);
+                if box_result {
+                    evaled = RootedVal::boxed_unfrozen(evaled.as_weak(), &mut self.heap);
+                }
                 create_env.insert_binding(name, evaled.downgrade());
             }
             Pattern::Function { name, args, body } => {
                 let body = prepare_function_body(body, &mut self.heap);
                 let globals = self.get_globals();
-                let function =
+                let mut function =
                     RootedVal::function(name, args, body.downgrade(), globals, &mut self.heap);
+                if box_result {
+                    function = RootedVal::boxed_unfrozen(function.as_weak(), &mut self.heap);
+                }
                 create_env.insert_binding(name, function.downgrade());
             }
         }
@@ -499,9 +505,15 @@ impl Interpreter {
                     found = loop {
                         if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
                             let val = val.as_weak();
-                            *env_entry = val;
+                            match env_entry {
+                                WeakVal::Boxed { inner, auto_deref } if *auto_deref => {
+                                    *self.get_mut(inner) = val
+                                }
+                                _ => *env_entry = val,
+                            }
                             break true;
                         };
+                        // next iteration
                         if let Some(val) = env.into_parent() {
                             env = val;
                         } else {
@@ -513,7 +525,12 @@ impl Interpreter {
                     match self.get_globals().borrow_mut().values.get_mut(inner) {
                         Some(env_entry) => {
                             let val = val.as_weak();
-                            *env_entry = val;
+                            match env_entry {
+                                WeakVal::Boxed { inner, auto_deref } if *auto_deref => {
+                                    *self.get_mut(inner) = val
+                                }
+                                _ => *env_entry = val,
+                            }
                         }
                         None => panic!("Trying to set! not defined location"),
                     }
@@ -525,7 +542,7 @@ impl Interpreter {
                     _ => panic!("Invalid list set!"),
                 };
                 if list_expr.is_builtin_symbol(BuiltinSymbols::BoxRef) {
-                    let mut boxed = self._eval_weak_do_not_auto_deref_box(&index_expr);
+                    let mut boxed = self.eval_weak(&index_expr);
                     boxed.set_box(val.as_weak(), &mut self.heap);
                     return RootedVal::none();
                 }

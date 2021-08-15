@@ -1,0 +1,9 @@
+(def i 0)
+(def my-list (list 1 2 3))
+
+(def (inc-i) (set! i (++ i)))
+(def (read-i) i)
+
+(def (change-list index val) (set! (my-list index) val))
+
+(export my-list change-list i inc-i read-i)
