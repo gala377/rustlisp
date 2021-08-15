@@ -1,4 +1,6 @@
-use std::{collections::HashMap, convert::TryInto, panic};
+use std::{convert::TryInto, panic};
+
+use hashbrown::HashMap;
 
 #[cfg(debug)]
 use crate::gc::HeapMarked;

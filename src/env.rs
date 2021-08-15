@@ -3,9 +3,10 @@ use crate::{
     runtime::WeakVal,
 };
 use std::{
-    borrow::Borrow, cell::RefCell, collections::HashMap, convert::TryFrom, ops::Index, rc::Rc,
+    borrow::Borrow, cell::RefCell,  convert::TryFrom, ops::Index, rc::Rc,
 };
 
+use hashbrown::HashMap;
 #[derive(Clone)]
 pub struct Metadata {
     pub exported: bool,

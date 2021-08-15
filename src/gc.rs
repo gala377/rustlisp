@@ -1,10 +1,11 @@
 use std::{
     cell::{Cell, UnsafeCell},
-    collections::HashMap,
     marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr,
 };
+
+use hashbrown::HashMap;
 
 use crate::{
     env::Environment,
@@ -14,7 +15,7 @@ use crate::{
 };
 
 #[cfg(feature = "hash_set")]
-pub type Set<T> = std::collections::HashSet<T>;
+pub type Set<T> = hashbrown::HashSet<T>;
 
 #[cfg(not(feature = "hash_set"))]
 pub type Set<T> = std::collections::BTreeSet<T>;

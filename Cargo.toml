@@ -19,6 +19,7 @@ panic = "abort"
 
 [dependencies]
 regex = "1.5"
+hashbrown = "0.11"
 
 [features]
 default_features = []
