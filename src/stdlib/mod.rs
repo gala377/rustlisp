@@ -208,12 +208,20 @@ fn define_native_functions(map: &mut HashMap<SymbolId, WeakVal>, symbol_table: &
         "panic!" => panic_impl,
         "module-lookup-item" => load::module_lookup_item_runtime_wrapper,
         "identity" => identity,
+
+        "box" => box_impl,
+        "unbox" => unbox_impl,
     });
 }
 
 use RootedVal::*;
 
 native_functions! {
+    typed box_impl(vm, arg) =>
+        RootedVal::boxed(arg.as_weak(), &mut vm.heap);
+
+    typed unbox_impl(vm, Boxed(inner)) => vm.get_ref(inner).as_root();
+
     typed identity(vm, arg) => arg.clone();
 
     typed less_than(vm, NumberVal(a), NumberVal(b)) =>

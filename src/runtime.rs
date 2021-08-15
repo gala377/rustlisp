@@ -211,6 +211,20 @@ impl RootedVal {
         RootedVal::NativeFunc(Rc::new(func))
     }
 
+    pub fn boxed(val: WeakVal, heap: &mut Heap) -> RootedVal {
+        let inner = heap.allocate(val);
+        Self::Boxed(inner)
+    }
+
+    pub fn unbox(&self, heap: &mut Heap) -> Option<RootedVal> {
+        if let Self::Boxed(inner) = self {
+            let inner_ref = heap.deref_ptr(inner);
+            Some(inner_ref.as_root())
+        } else {
+            None
+        }
+    }
+
     pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use RootedVal::*;
         match self {
