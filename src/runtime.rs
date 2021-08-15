@@ -5,7 +5,7 @@ use crate::{
     gc::{self, Allocable, Heap, Root, TypeTag},
     native::{NativeStruct, RootedStructPtr, WeakStructPtr},
 };
-use std::rc::Rc;
+use std::{ops::Deref, rc::Rc};
 
 #[derive(Clone)]
 pub struct FunctionArgs {
@@ -100,6 +100,7 @@ pub enum RootedVal {
     Lambda(Root<Lambda>),
     List(Root<Vec<WeakVal>>),
     UserType(RootedStructPtr),
+    Boxed(Root<WeakVal>),
 }
 
 impl RootedVal {
@@ -115,6 +116,7 @@ impl RootedVal {
             UserType(x) => WeakVal::UserType(x.downgrade()),
             Lambda(x) => WeakVal::Lambda(x.downgrade()),
             Macro(x) => WeakVal::Macro(x.downgrade()),
+            Boxed(x) => WeakVal::Boxed(x.downgrade()),
         }
     }
 
@@ -237,6 +239,9 @@ impl RootedVal {
                 format!("Macro {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
+            Boxed(val) => {
+                format!("Boxed[{}]", heap.deref_ptr(val).repr(heap, symbol_table))
+            }
             _ => "No representation".into(),
         }
     }
@@ -278,6 +283,7 @@ pub enum WeakVal {
     NativeFunc(NativeFunc),
     Lambda(gc::Weak<Lambda>),
     UserType(WeakStructPtr),
+    Boxed(gc::Weak<WeakVal>),
 }
 
 impl WeakVal {
@@ -293,6 +299,8 @@ impl WeakVal {
             Lambda(x) => RootedVal::Lambda(x.upgrade()),
             UserType(x) => RootedVal::UserType(x.upgrade()),
             Macro(x) => RootedVal::Macro(x.upgrade()),
+            Boxed(x) => RootedVal::Boxed(x.upgrade()),
+
         }
     }
 
@@ -344,6 +352,7 @@ impl WeakVal {
             }
             Lambda(_) => std::string::String::from("Lambda object"),
             UserType(_) => "Not supported".into(),
+            Boxed(val) => format!("Boxed[{}]", heap.deref_ptr(val).repr(heap, symbol_table)),
         }
     }
 
@@ -398,5 +407,11 @@ impl WeakVal {
             Lambda(_) => "Lambda function".to_owned(),
             _ => "Not supported".into(),
         }
+    }
+}
+
+impl Allocable for WeakVal {
+    fn tag() -> TypeTag {
+        TypeTag::Boxed
     }
 }

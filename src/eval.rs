@@ -118,7 +118,7 @@ impl Interpreter {
                     code_ref.clear();
                     code_ref.clone_from(&replace_with);
                 },
-                Func(_) | Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) => {
+                Func(_) | Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed(_) => {
                     panic!("Macro invocation returned value that cannot be evaluated")
                 }
             }
