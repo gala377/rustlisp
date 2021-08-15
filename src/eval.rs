@@ -1,9 +1,13 @@
 use std::{convert::TryInto, panic};
 
+#[cfg(feature = "hashbrown")]
 use hashbrown::HashMap;
+#[cfg(not(feature = "hashbrown"))]
+use std::collections::HashMap;
 
 #[cfg(debug)]
 use crate::gc::HeapMarked;
+
 use crate::{
     env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
     gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},

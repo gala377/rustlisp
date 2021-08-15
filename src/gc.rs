@@ -5,7 +5,10 @@ use std::{
     ptr,
 };
 
+#[cfg(feature = "hashbrown")]
 use hashbrown::HashMap;
+#[cfg(not(feature = "hashbrown"))]
+use std::collections::HashMap;
 
 use crate::{
     env::Environment,
@@ -14,8 +17,11 @@ use crate::{
     runtime::{self, Lambda, RuntimeFunc, WeakVal},
 };
 
-#[cfg(feature = "hash_set")]
+#[cfg(all(feature = "hash_set", feature = "hashbrown"))]
 pub type Set<T> = hashbrown::HashSet<T>;
+
+#[cfg(all(feature = "hash_set", not(feature = "hashbrown")))]
+pub type Set<T> = std::collections::HashSet<T>;
 
 #[cfg(not(feature = "hash_set"))]
 pub type Set<T> = std::collections::BTreeSet<T>;

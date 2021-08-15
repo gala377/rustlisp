@@ -6,7 +6,11 @@ use std::{
     borrow::Borrow, cell::RefCell,  convert::TryFrom, ops::Index, rc::Rc,
 };
 
+#[cfg(feature = "hashbrown")]
 use hashbrown::HashMap;
+#[cfg(not(feature = "hashbrown"))]
+use std::collections::HashMap;
+
 #[derive(Clone)]
 pub struct Metadata {
     pub exported: bool,
