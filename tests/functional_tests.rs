@@ -24,4 +24,5 @@ functional_tests! {
     set_form_tests,
     native_types_test,
     load_function_test,
+    boxed_test,
 }

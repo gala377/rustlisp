@@ -367,7 +367,7 @@ impl HeapEntry {
                     safe_drop_and_free::<String>(ptr.as_ptr());
                 }
                 TypeTag::Boxed => {
-                    safe_drop_and_free::<WeakVal>(ptr.as_ptr());
+                    safe_drop_and_free::<runtime::WeakVal>(ptr.as_ptr());
                 }
                 TypeTag::UserType => match self.header.vptr {
                     None => unreachable!("User type should always have drop function implemented"),
@@ -753,7 +753,7 @@ impl MarkSweep {
     }
 
     fn visit_boxed(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
-        let value_ref = Self::entry_data::<WeakVal>(heap, entry_index);
+        let value_ref = Self::entry_data::<runtime::WeakVal>(heap, entry_index);
         self.visit_weak_val(marked, heap, value_ref);
     }
 
@@ -807,7 +807,7 @@ impl MarkSweep {
             List(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             StringVal(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             UserType(ptr) => self.visit_entry(marked, heap, ptr.data.entry_index()),
-            Boxed(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
+            Boxed { inner, .. } => self.visit_entry(marked, heap, inner.entry_index()),
             // We don't use catch all here so if we add any other type this
             // will stop compiling and its a good thing
             NumberVal(_) | Symbol(_) | NativeFunc(_) => (),

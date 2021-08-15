@@ -100,7 +100,7 @@ impl Environment {
     pub fn is_exported(&self, symbol: SymbolId) -> bool {
         match (*self.0).borrow().metadata.get(&symbol) {
             None => panic!("Checking metadata of nonexistent symbol"),
-            Some(m) => m.exported
+            Some(m) => m.exported,
         }
     }
 
@@ -392,5 +392,6 @@ generate_builtin_symbols! {
         ("module-lookup-item": 17) => ModuleLookupItem,
         ("export": 18) => Export,
         ("identity": 19) => Identity,
+        ("box-ref": 20) => BoxRef,
     }
 }

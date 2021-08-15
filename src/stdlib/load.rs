@@ -78,7 +78,10 @@ fn module_lookup_item(vm: &mut Interpreter, module: &str, item: SymbolId) -> Roo
             None => panic!("No item {} in module {}", vm.symbols[item], module),
             Some(item_val) => {
                 if !globals.is_exported(item) {
-                    panic!("Trying to use private item {} from module {}", vm.symbols[item], module);
+                    panic!(
+                        "Trying to use private item {} from module {}",
+                        vm.symbols[item], module
+                    );
                 }
                 item_val.as_root()
             }
@@ -109,7 +112,10 @@ fn import_module(vm: &mut Interpreter, module_path: &str, imports: &[ImportSymbo
     };
     for import in imports {
         if !module.is_exported(import.symbol) {
-            panic!("Trying to import private symbol {} from module {}", vm.symbols[import.symbol], module_path);
+            panic!(
+                "Trying to import private symbol {} from module {}",
+                vm.symbols[import.symbol], module_path
+            );
         }
         let val = match module.borrow().values.get(&import.symbol) {
             Some(val) => val.clone(),

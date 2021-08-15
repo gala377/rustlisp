@@ -57,6 +57,19 @@ impl Interpreter {
     }
 
     fn eval_weak(&mut self, expr: &WeakVal) -> RootedVal {
+        let res = match expr {
+            WeakVal::NumberVal(_) | WeakVal::StringVal(_) => expr.as_root(),
+            WeakVal::Symbol(val) => self.eval_symbol(*val),
+            WeakVal::List(val) => self.eval_list(val),
+            _ => panic!("Cannot evaluate this node"),
+        };
+        match &res {
+            RootedVal::Boxed { inner, auto_deref } if *auto_deref => self.get_ref(inner).as_root(),
+            _ => res,
+        }
+    }
+
+    fn _eval_weak_do_not_auto_deref_box(&mut self, expr: &WeakVal) -> RootedVal {
         match expr {
             WeakVal::NumberVal(_) | WeakVal::StringVal(_) => expr.as_root(),
             WeakVal::Symbol(val) => self.eval_symbol(*val),
@@ -106,19 +119,20 @@ impl Interpreter {
                     let mut code_ref = self.get_mut(&mut vals);
                     code_ref.clear();
                     code_ref.clone_from(&replace_with);
-                },
+                }
                 Symbol(_) | NumberVal(_) | StringVal(_) => {
                     let wrapped = vec![
                         WeakVal::Symbol(BuiltinSymbols::Identity as SymbolId),
-                        expanded.as_weak()];
+                        expanded.as_weak(),
+                    ];
                     let wrapped = self.heap.allocate(wrapped);
                     let mut vals = vals.clone();
                     let replace_with = self.get_ref(&wrapped).clone();
                     let mut code_ref = self.get_mut(&mut vals);
                     code_ref.clear();
                     code_ref.clone_from(&replace_with);
-                },
-                Func(_) | Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed(_) => {
+                }
+                Func(_) | Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed { .. } => {
                     panic!("Macro invocation returned value that cannot be evaluated")
                 }
             }
@@ -228,6 +242,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::Let) => Ok(self.eval_let(vals)),
             Ok(BuiltinSymbols::Export) => Ok(self.eval_export(vals)),
             Ok(BuiltinSymbols::Splice) => panic!("unquote-splicing is not quasiquote context"),
+            Ok(BuiltinSymbols::BoxRef) => Ok(self.eval_box_ref(vals)),
             _ => Err(NotSpecialForm),
         }
     }
@@ -282,8 +297,7 @@ impl Interpreter {
                 let globals = self.get_globals();
                 let function =
                     RootedVal::function(name, args, body.downgrade(), globals, &mut self.heap);
-                create_env
-                    .insert_binding(name, function.downgrade());
+                create_env.insert_binding(name, function.downgrade());
             }
         }
         RootedVal::none()
@@ -510,6 +524,11 @@ impl Interpreter {
                     [list_expr, index_expr] => (list_expr.clone(), index_expr.clone()),
                     _ => panic!("Invalid list set!"),
                 };
+                if list_expr.is_builtin_symbol(BuiltinSymbols::BoxRef) {
+                    let mut boxed = self._eval_weak_do_not_auto_deref_box(&index_expr);
+                    boxed.set_box(val.as_weak(), &mut self.heap);
+                    return RootedVal::none();
+                }
                 let (mut list, index) = {
                     let list = self.eval_weak(&list_expr);
                     let index = self.eval_weak(&index_expr);
@@ -578,7 +597,7 @@ impl Interpreter {
         res
     }
 
-    pub fn eval_export(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
+    fn eval_export(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         assert!(
             self.get_locals().is_none(),
             "You can only export in top level"
@@ -591,6 +610,20 @@ impl Interpreter {
             }
         }
         RootedVal::none()
+    }
+
+    fn eval_box_ref(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
+        assert!(self.get_ref(expr).len() == 2, "box-ref expects 1 argument");
+        let boxed_val = self.get_ref(expr).get(1).unwrap().clone();
+        let mut res = self._eval_weak_do_not_auto_deref_box(&boxed_val);
+        if let RootedVal::Boxed { inner, .. } = &mut res {
+            RootedVal::Boxed {
+                inner: inner.clone(),
+                auto_deref: false,
+            }
+        } else {
+            panic!("box-ref argument needs to be a box")
+        }
     }
 
     #[inline]

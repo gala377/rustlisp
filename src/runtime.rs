@@ -2,7 +2,7 @@ use crate::{
     env::BuiltinSymbols,
     env::{Environment, SymbolId, SymbolTable},
     eval::Interpreter,
-    gc::{self, Allocable, Heap, Root, TypeTag},
+    gc::{self, Allocable, Heap, Root, TypeTag, Weak},
     native::{NativeStruct, RootedStructPtr, WeakStructPtr},
 };
 use std::{ops::Deref, rc::Rc};
@@ -50,6 +50,12 @@ impl RuntimeFunc {
 }
 
 pub type NativeFunc = Rc<dyn Fn(&mut Interpreter, Vec<RootedVal>) -> RootedVal>;
+
+impl Allocable for WeakVal {
+    fn tag() -> TypeTag {
+        TypeTag::Boxed
+    }
+}
 
 impl<F> Allocable for F
 where
@@ -100,7 +106,10 @@ pub enum RootedVal {
     Lambda(Root<Lambda>),
     List(Root<Vec<WeakVal>>),
     UserType(RootedStructPtr),
-    Boxed(Root<WeakVal>),
+    Boxed {
+        inner: Root<WeakVal>,
+        auto_deref: bool,
+    },
 }
 
 impl RootedVal {
@@ -116,7 +125,10 @@ impl RootedVal {
             UserType(x) => WeakVal::UserType(x.downgrade()),
             Lambda(x) => WeakVal::Lambda(x.downgrade()),
             Macro(x) => WeakVal::Macro(x.downgrade()),
-            Boxed(x) => WeakVal::Boxed(x.downgrade()),
+            Boxed { inner, auto_deref } => WeakVal::Boxed {
+                inner: inner.downgrade(),
+                auto_deref,
+            },
         }
     }
 
@@ -213,15 +225,35 @@ impl RootedVal {
 
     pub fn boxed(val: WeakVal, heap: &mut Heap) -> RootedVal {
         let inner = heap.allocate(val);
-        Self::Boxed(inner)
+        Self::Boxed {
+            inner,
+            auto_deref: false,
+        }
     }
 
-    pub fn unbox(&self, heap: &mut Heap) -> Option<RootedVal> {
-        if let Self::Boxed(inner) = self {
+    pub fn boxed_unfrozen(val: WeakVal, heap: &mut Heap) -> RootedVal {
+        let inner = heap.allocate(val);
+        Self::Boxed {
+            inner,
+            auto_deref: true,
+        }
+    }
+
+    pub fn unbox(&self, heap: &mut Heap) -> RootedVal {
+        if let Self::Boxed { inner, .. } = self {
             let inner_ref = heap.deref_ptr(inner);
-            Some(inner_ref.as_root())
+            inner_ref.as_root()
         } else {
-            None
+            self.clone()
+        }
+    }
+
+    pub fn set_box(&mut self, val: WeakVal, heap: &mut Heap) {
+        if let Self::Boxed { inner, .. } = self {
+            let mut inner_ref = heap.deref_ptr_mut(inner);
+            *inner_ref = val;
+        } else {
+            panic!("Value is not a box")
         }
     }
 
@@ -253,8 +285,12 @@ impl RootedVal {
                 format!("Macro {}", symbol_table[symbol])
             }
             Lambda(_) => std::string::String::from("Lambda object"),
-            Boxed(val) => {
-                format!("Boxed[{}]", heap.deref_ptr(val).repr(heap, symbol_table))
+            Boxed { inner, auto_deref } => {
+                if *auto_deref {
+                    format!("Boxed*[{}]", heap.deref_ptr(inner).repr(heap, symbol_table))
+                } else {
+                    format!("Boxed[{}]", heap.deref_ptr(inner).repr(heap, symbol_table))
+                }
             }
             _ => "No representation".into(),
         }
@@ -297,7 +333,10 @@ pub enum WeakVal {
     NativeFunc(NativeFunc),
     Lambda(gc::Weak<Lambda>),
     UserType(WeakStructPtr),
-    Boxed(gc::Weak<WeakVal>),
+    Boxed {
+        inner: gc::Weak<WeakVal>,
+        auto_deref: bool,
+    },
 }
 
 impl WeakVal {
@@ -313,8 +352,10 @@ impl WeakVal {
             Lambda(x) => RootedVal::Lambda(x.upgrade()),
             UserType(x) => RootedVal::UserType(x.upgrade()),
             Macro(x) => RootedVal::Macro(x.upgrade()),
-            Boxed(x) => RootedVal::Boxed(x.upgrade()),
-
+            Boxed { inner, auto_deref } => RootedVal::Boxed {
+                inner: inner.upgrade(),
+                auto_deref,
+            },
         }
     }
 
@@ -338,6 +379,24 @@ impl WeakVal {
 
     pub fn is_builtin_symbol(&self, sym: BuiltinSymbols) -> bool {
         self.is_symbol(sym as usize)
+    }
+
+    pub fn unbox(&self, heap: &mut Heap) -> RootedVal {
+        if let Self::Boxed { inner, .. } = self {
+            let inner_ref = heap.deref_ptr(inner);
+            inner_ref.as_root()
+        } else {
+            self.as_root()
+        }
+    }
+
+    pub fn set_box(&mut self, val: WeakVal, heap: &mut Heap) {
+        if let Self::Boxed { inner, .. } = self {
+            let mut inner_ref = heap.deref_ptr_mut(inner);
+            *inner_ref = val;
+        } else {
+            panic!("Value is not a box")
+        }
     }
 
     pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
@@ -366,7 +425,13 @@ impl WeakVal {
             }
             Lambda(_) => std::string::String::from("Lambda object"),
             UserType(_) => "Not supported".into(),
-            Boxed(val) => format!("Boxed[{}]", heap.deref_ptr(val).repr(heap, symbol_table)),
+            Boxed { inner, auto_deref } => {
+                if *auto_deref {
+                    format!("Boxed*[{}]", heap.deref_ptr(inner).repr(heap, symbol_table))
+                } else {
+                    format!("Boxed[{}]", heap.deref_ptr(inner).repr(heap, symbol_table))
+                }
+            }
         }
     }
 
@@ -421,11 +486,5 @@ impl WeakVal {
             Lambda(_) => "Lambda function".to_owned(),
             _ => "Not supported".into(),
         }
-    }
-}
-
-impl Allocable for WeakVal {
-    fn tag() -> TypeTag {
-        TypeTag::Boxed
     }
 }

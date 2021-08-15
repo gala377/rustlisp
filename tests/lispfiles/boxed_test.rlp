@@ -1,0 +1,23 @@
+(def num-box (box 0))
+(def list-box (box (list 1 2 3 4)))
+
+(assert-equal (unbox num-box) 0)
+(assert-equal (unbox list-box) '(1 2 3 4))
+(assert-equal (unbox (box 'foo)) 'foo)
+(assert-equal (unbox (box-ref (box 'foo-bar))) 'foo-bar)
+
+(set! (box-ref num-box) 3)
+(assert-equal (unbox num-box) 3)
+
+(def alias list-box)
+
+(def (ret-box) list-box)
+(assert-equal (unbox (ret-box)) '(1 2 3 4))
+(set! (box-ref (ret-box)) 'new-value)
+(assert-equal (unbox list-box) 'new-value)
+(assert-equal (unbox alias) 'new-value)
+(assert-equal (unbox (ret-box)) 'new-value)
+
+(set! num-box 3)
+; this does panic as num-box is now just an unboxed 3
+; (assert-equal (unbox num-box) 3)

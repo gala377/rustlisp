@@ -220,7 +220,7 @@ native_functions! {
     typed box_impl(vm, arg) =>
         RootedVal::boxed(arg.as_weak(), &mut vm.heap);
 
-    typed unbox_impl(vm, Boxed(inner)) => vm.get_ref(inner).as_root();
+    typed unbox_impl(vm, Boxed { inner, .. }) => vm.get_ref(inner).as_root();
 
     typed identity(vm, arg) => arg.clone();
 
