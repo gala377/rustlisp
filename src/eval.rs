@@ -8,7 +8,11 @@ use std::collections::HashMap;
 #[cfg(debug)]
 use crate::gc::HeapMarked;
 
-use crate::{env::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef}, runtime::{FunctionArgs, Lambda, RootedVal, WeakVal}};
+use crate::{
+    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
+    gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
+    runtime::{FunctionArgs, Lambda, RootedVal, WeakVal},
+};
 
 type Env = Environment;
 
@@ -33,7 +37,6 @@ pub struct Interpreter {
     pub symbols: SymbolTable,
     pub modules: HashMap<String, ModuleState>,
 }
-
 
 impl Interpreter {
     pub fn new(
@@ -177,11 +180,7 @@ impl Interpreter {
         res
     }
 
-    fn expand_macro(
-        &mut self,
-        macro_body: &gc::Root<Lambda>,
-        args: Vec<RootedVal>,
-    ) -> RootedVal {
+    fn expand_macro(&mut self, macro_body: &gc::Root<Lambda>, args: Vec<RootedVal>) -> RootedVal {
         let (func_body, func_args, func_globals) = {
             let func = self.get_ref(macro_body);
             (func.body.clone(), func.args.clone(), func.globals.clone())
@@ -510,21 +509,19 @@ impl Interpreter {
                     boxed.set_box(val.as_weak(), &mut self.heap);
                     return RootedVal::none();
                 }
-                let (mut list, index) = {
-                    let list = self.eval_weak(&list_expr);
-                    let index = self.eval_weak(&index_expr);
-                    match (list, index) {
-                        (RootedVal::List(ptr), RootedVal::NumberVal(index)) => (ptr, index),
-                        _ => panic!("List set! target types mismatched"),
-                    }
-                };
-                let index = index as usize;
+                let (mut list, index) = (
+                    self.eval_weak(&list_expr)
+                        .as_list()
+                        .expect("set! form list expected as first argument"),
+                    self.eval_weak(&index_expr)
+                        .as_number()
+                        .expect("set! form number expected as second argument") as usize,
+                );
                 let len = self.get_ref(&list).len();
                 if index >= len {
                     panic!("Trying to set list location past its size")
                 }
-                let val = val.as_weak();
-                self.get_mut(&mut list)[index] = val;
+                self.get_mut(&mut list)[index] = val.as_weak();
             }
             _ => panic!("Invalid set!"),
         }

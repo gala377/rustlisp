@@ -22,7 +22,13 @@ pub struct Lambda {
 }
 
 impl Lambda {
-    fn new(env: Environment, name: Option<SymbolId>, args: FunctionArgs, body: WeakVal, globals: Environment) -> Self {
+    fn new(
+        env: Environment,
+        name: Option<SymbolId>,
+        args: FunctionArgs,
+        body: WeakVal,
+        globals: Environment,
+    ) -> Self {
         Self {
             env,
             name,
@@ -32,7 +38,6 @@ impl Lambda {
         }
     }
 }
-
 
 pub type NativeFunc = Rc<dyn Fn(&mut Interpreter, Vec<RootedVal>) -> RootedVal>;
 
@@ -145,7 +150,13 @@ impl RootedVal {
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(Lambda::new(Environment::new(), Some(name), args, body, globals));
+        let inner = heap.allocate(Lambda::new(
+            Environment::new(),
+            Some(name),
+            args,
+            body,
+            globals,
+        ));
         Self::Lambda(inner)
     }
 
@@ -156,7 +167,13 @@ impl RootedVal {
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(Lambda::new(Environment::new(), Some(name), args, body, globals));
+        let inner = heap.allocate(Lambda::new(
+            Environment::new(),
+            Some(name),
+            args,
+            body,
+            globals,
+        ));
         Self::Macro(inner)
     }
 
@@ -234,6 +251,30 @@ impl RootedVal {
         }
     }
 
+    pub fn as_list(self) -> Option<Root<Vec<WeakVal>>> {
+        if let Self::List(l) = self {
+            Some(l)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_number(self) -> Option<f64> {
+        if let Self::NumberVal(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+
+    pub fn as_symbol(self) -> Option<SymbolId> {
+        if let Self::Symbol(n) = self {
+            Some(n)
+        } else {
+            None
+        }
+    }
+
     pub fn repr(&self, heap: &Heap, symbol_table: &SymbolTable) -> std::string::String {
         use RootedVal::*;
         match self {
@@ -260,7 +301,7 @@ impl RootedVal {
             Lambda(func) => match heap.deref_ptr(func).name {
                 None => "Lambda function".into(),
                 Some(name) => format!("Function {}", symbol_table[name]),
-            }
+            },
             Boxed { inner, auto_deref } => {
                 if *auto_deref {
                     format!("Boxed*[{}]", heap.deref_ptr(inner).repr(heap, symbol_table))
@@ -396,7 +437,7 @@ impl WeakVal {
             Lambda(func) => match heap.deref_ptr(func).name {
                 None => "Lambda function".into(),
                 Some(name) => format!("Function {}", symbol_table[name]),
-            }
+            },
             UserType(_) => "Not supported".into(),
             Boxed { inner, auto_deref } => {
                 if *auto_deref {
@@ -423,7 +464,7 @@ impl WeakVal {
             Lambda(func) => match heap.deref_ptr(func).name {
                 None => "Lambda function".into(),
                 Some(name) => format!("Function {}", symbol_table[name]),
-            }
+            },
             _ => "Not supported".into(),
         }
     }
