@@ -152,7 +152,11 @@ impl Interpreter {
         res
     }
 
-    fn try_eval_macro(&mut self, func_evaled: RootedVal, vals: &gc::Weak<Vec<WeakVal>>) -> Result<RootedVal, ()> {
+    fn try_eval_macro(
+        &mut self,
+        func_evaled: RootedVal,
+        vals: &gc::Weak<Vec<WeakVal>>,
+    ) -> Result<RootedVal, ()> {
         if let RootedVal::Macro(macro_body) = &func_evaled {
             let mut vals = vals.clone();
             let macro_args = map_scoped_vec_range(self, &vals, (1, 0), |_, val| val.as_root());
@@ -166,11 +170,10 @@ impl Interpreter {
                     code_ref.clone_from(&replace_with);
                 }
                 Symbol(_) | NumberVal(_) | StringVal(_) => {
-                    let wrapped = vec![
+                    let wrapped = self.heap.allocate(vec![
                         WeakVal::Symbol(BuiltinSymbols::Identity as SymbolId),
                         expanded.as_weak(),
-                    ];
-                    let wrapped = self.heap.allocate(wrapped);
+                    ]);
                     let replace_with = self.get_ref(&wrapped).clone();
                     let mut code_ref = self.get_mut(&mut vals);
                     code_ref.clone_from(&replace_with);
@@ -207,10 +210,7 @@ impl Interpreter {
         res
     }
 
-    fn try_eval_special_form(
-        &mut self,
-        vals: &gc::Weak<Vec<WeakVal>>,
-    ) -> Result<RootedVal, ()> {
+    fn try_eval_special_form(&mut self, vals: &gc::Weak<Vec<WeakVal>>) -> Result<RootedVal, ()> {
         let symbol = match &self.get_ref(vals)[0] {
             WeakVal::Symbol(val) => *val,
             _ => return Err(()),
@@ -701,7 +701,6 @@ fn populate_env(
     }
     env
 }
-
 
 fn collect_function_definition_arguments(args: &[WeakVal]) -> FunctionArgs {
     let mut function_args = FunctionArgs {
