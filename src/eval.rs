@@ -1,4 +1,4 @@
-use std::{convert::TryInto, panic};
+use std::{borrow::BorrowMut, convert::TryInto, panic};
 
 #[cfg(feature = "hashbrown")]
 use hashbrown::HashMap;
@@ -33,6 +33,7 @@ pub struct Interpreter {
     pub symbols: SymbolTable,
     pub modules: HashMap<String, ModuleState>,
 }
+
 
 impl Interpreter {
     pub fn new(
@@ -481,41 +482,22 @@ impl Interpreter {
         let val = self.eval_weak(&val);
         match &location {
             WeakVal::Symbol(inner) => {
-                let mut found = false;
-                if let Some(env) = self.get_locals() {
-                    let mut env = env.clone();
-                    found = loop {
-                        if let Some(env_entry) = env.borrow_mut().values.get_mut(inner) {
-                            let val = val.as_weak();
-                            match env_entry {
-                                WeakVal::Boxed { inner, auto_deref } if *auto_deref => {
-                                    *self.get_mut(inner) = val
-                                }
-                                _ => *env_entry = val,
-                            }
-                            break true;
-                        };
-                        // next iteration
-                        if let Some(val) = env.into_parent() {
-                            env = val;
-                        } else {
-                            break false;
-                        }
-                    };
-                }
-                if !found {
-                    match self.get_globals().borrow_mut().values.get_mut(inner) {
-                        Some(env_entry) => {
-                            let val = val.as_weak();
-                            match env_entry {
-                                WeakVal::Boxed { inner, auto_deref } if *auto_deref => {
-                                    *self.get_mut(inner) = val
-                                }
-                                _ => *env_entry = val,
-                            }
-                        }
-                        None => panic!("Trying to set! not defined location"),
+                let mut containing_env = self.get_globals();
+                let mut curr_env = self.get_locals();
+                while let Some(env) = curr_env {
+                    if env.borrow().values.contains_key(inner) {
+                        containing_env = env;
+                        break;
                     }
+                    curr_env = env.into_parent();
+                }
+                let mut env_borrow = containing_env.borrow_mut();
+                match env_borrow.values.get_mut(inner) {
+                    Some(WeakVal::Boxed { inner, auto_deref }) if *auto_deref => {
+                        *self.get_mut(inner) = val.as_weak()
+                    }
+                    Some(entry @ _) => *entry = val.as_weak(),
+                    None => panic!("Trying to set! not defined value"),
                 }
             }
             WeakVal::List(inner) => {
@@ -647,15 +629,11 @@ impl Interpreter {
 
     #[inline]
     pub fn get_globals(&self) -> Env {
-        // todo: do match instead of unwrap because
-        // unwrap generates a lot od stack unwinding code
         self.get_frame().globals.clone()
     }
 
     #[inline]
     pub fn get_locals(&self) -> Option<Env> {
-        // todo: do match instead of unwrap because
-        // unwrap generates a lot od stack unwinding code
         self.get_frame().locals.clone()
     }
 
