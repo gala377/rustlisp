@@ -154,16 +154,15 @@ impl Interpreter {
 
     fn try_eval_macro(&mut self, func_evaled: RootedVal, vals: &gc::Weak<Vec<WeakVal>>) -> Result<RootedVal, ()> {
         if let RootedVal::Macro(macro_body) = &func_evaled {
-            let macro_args = map_scoped_vec_range(self, vals, (1, 0), |_, val| val.as_root());
+            let mut vals = vals.clone();
+            let macro_args = map_scoped_vec_range(self, &vals, (1, 0), |_, val| val.as_root());
             let expanded = self.expand_macro(macro_body, macro_args);
             let res = self.eval(&expanded);
             use RootedVal::*;
             match &expanded {
                 List(inner) => {
-                    let mut vals = vals.clone();
                     let replace_with = self.get_ref(inner).clone();
                     let mut code_ref = self.get_mut(&mut vals);
-                    code_ref.clear();
                     code_ref.clone_from(&replace_with);
                 }
                 Symbol(_) | NumberVal(_) | StringVal(_) => {
@@ -173,9 +172,7 @@ impl Interpreter {
                     ];
                     let wrapped = self.heap.allocate(wrapped);
                     let replace_with = self.get_ref(&wrapped).clone();
-                    let mut vals = vals.clone();
                     let mut code_ref = self.get_mut(&mut vals);
-                    code_ref.clear();
                     code_ref.clone_from(&replace_with);
                 }
                 Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed { .. } => {
