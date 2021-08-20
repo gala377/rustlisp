@@ -391,56 +391,46 @@ impl Interpreter {
         match action {
             Action::Upgrade => expr.as_root(),
             Action::Unquote => {
-                if let WeakVal::List(inner) = expr {
-                    let raw_val = self.get_ref(inner)[1].clone();
-                    self.eval_weak(&raw_val)
-                } else {
-                    unreachable!("we checked before the shape of the expr")
-                }
+                let inner = expr.as_root().as_list().unwrap();
+                let raw_val = self.get_ref(&inner)[1].clone();
+                self.eval_weak(&raw_val)
             }
             Action::Recurse => {
-                if let WeakVal::List(ptr) = expr {
-                    let len = self.get_ref(ptr).len();
-                    let mut res = Vec::new();
-                    for i in 0..len {
-                        let raw_val = self.get_ref(ptr)[i].clone();
-                        match &raw_val {
-                            WeakVal::List(inner) if self.get_ref(inner).len() == 2 => {
-                                if !self.handle_possible_unquote_splicing(&mut res, inner) {
-                                    res.push(self.quasiquote_expr(&raw_val));
-                                }
-                            }
-                            _ => res.push(self.quasiquote_expr(&raw_val)),
+                let ptr = expr.as_root().as_list().unwrap();
+                let mut res = Vec::new();
+                map_scoped_vec(self, &ptr, |vm, val| match val {
+                    WeakVal::List(inner) if vm.get_ref(inner).len() == 2 => {
+                        match vm.handle_possible_unquote_splicing(inner) {
+                            None => res.push(vm.quasiquote_expr(&val)),
+                            Some(vals) => res.extend(vals),
                         }
                     }
-                    RootedVal::list_from_rooted(res, &mut self.heap)
-                } else {
-                    unreachable!("we checked before the shape of the expr")
-                }
+                    _ => res.push(vm.quasiquote_expr(&val)),
+                });
+                RootedVal::list_from_rooted(res, &mut self.heap)
             }
         }
     }
 
     fn handle_possible_unquote_splicing(
         &mut self,
-        res: &mut Vec<RootedVal>,
         expr: &gc::Weak<Vec<WeakVal>>,
-    ) -> bool {
+    ) -> Option<Vec<RootedVal>> {
         let head = &self.get_ref(expr)[0];
         if !head.is_builtin_symbol(BuiltinSymbols::Splice) {
-            return false;
+            return None;
         }
         let rest = self.get_ref(expr)[1].clone();
-        let rest_evaled = self.eval_weak(&rest);
-        match &rest_evaled {
-            RootedVal::List(inner) => {
-                for val in &*self.get_ref(inner) {
-                    res.push(val.as_root())
-                }
-            }
-            _ => panic!("Unquote-splicing argument has to evaluate to a list"),
-        }
-        true
+        let rest_evaled = self
+            .eval_weak(&rest)
+            .as_list()
+            .expect("Unquote-splicing argument has to evaluate to a list");
+        Some(
+            self.get_ref(&rest_evaled)
+                .iter()
+                .map(WeakVal::as_root)
+                .collect(),
+        )
     }
 
     fn eval_if(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
@@ -472,7 +462,7 @@ impl Interpreter {
         let cond = self.get_ref(expr)[1].clone();
         while self
             .eval_weak(&cond)
-            .is_symbol(BuiltinSymbols::True as usize)
+            .is_builtin_symbol(BuiltinSymbols::True)
         {
             map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
         }

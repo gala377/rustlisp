@@ -331,6 +331,10 @@ impl RootedVal {
         }
     }
 
+    pub fn is_builtin_symbol(&self, sym: BuiltinSymbols) -> bool {
+        self.is_symbol(sym as usize)
+    }
+
     pub fn is_callable(&self) -> bool {
         match self {
             Self::NativeFunc(_) | Self::Lambda(_) => true,
