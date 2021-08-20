@@ -1,4 +1,4 @@
-use std::{borrow::BorrowMut, convert::TryInto, panic};
+use std::convert::TryInto;
 
 #[cfg(feature = "hashbrown")]
 use hashbrown::HashMap;
