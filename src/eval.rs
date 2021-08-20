@@ -515,7 +515,8 @@ impl Interpreter {
                         .expect("set! form list expected as first argument"),
                     self.eval_weak(&index_expr)
                         .as_number()
-                        .expect("set! form number expected as second argument") as usize,
+                        .expect("set! form number expected as second argument")
+                        as usize,
                 );
                 let len = self.get_ref(&list).len();
                 if index >= len {
@@ -531,40 +532,31 @@ impl Interpreter {
     fn eval_let(&mut self, expr: &gc::Weak<Vec<WeakVal>>) -> RootedVal {
         let size = self.get_ref(expr).len();
         assert!(size > 2, "let form needs at least 2 arguments");
-        let bindings = self.get_ref(expr)[1].clone();
-        // prepare let env
-        let mut evaled_bindings = HashMap::new();
-        match &bindings {
-            WeakVal::List(inner) => {
-                let to_evaluate = map_scoped_vec(self, inner, |vm, binding| match binding {
-                    WeakVal::List(binding) => match &vm.get_ref(binding)[..] {
-                        [WeakVal::Symbol(name), body] => (*name, body.clone()),
-                        _ => panic!("Wrong binding form, expected Symbol and an expression"),
-                    },
-                    _ => panic!("Each binding should be a list of length 2"),
-                });
-                for (name, body) in to_evaluate {
-                    let body = self.eval_weak(&body);
-                    evaled_bindings.insert(name, body);
-                }
+        let bindings = self.get_ref(expr)[1]
+            .as_root()
+            .as_list()
+            .expect("Let binding expected to be a list");
+        let mut let_env: Environment = map_scoped_vec(self, &bindings, |vm, binding| {
+            let (name, body) = vm
+                .extract_pair(binding)
+                .expect("Expected binding to be a pair");
+            (
+                name.as_root()
+                    .as_symbol()
+                    .expect("First binding element should be a symbol"),
+                vm.eval_weak(&body),
+            )
+        })
+        .into_iter()
+        .into();
+        let curr_frame = self.get_frame_mut();
+        match &curr_frame.locals {
+            None => curr_frame.locals = Some(let_env.clone()),
+            Some(env) => {
+                let_env.reparent(env.clone());
+                curr_frame.locals = Some(let_env.clone())
             }
-            _ => panic!("Let bindings have to be a list"),
-        };
-        let let_env: HashMap<_, _> = evaled_bindings
-            .into_iter()
-            .map(|(name, val)| (name, val.downgrade()))
-            .collect();
-        let mut let_env: Environment = let_env.into();
-        {
-            let curr_frame = self.get_frame_mut();
-            match &curr_frame.locals {
-                None => curr_frame.locals = Some(let_env.clone()),
-                Some(env) => {
-                    let_env.reparent(env.clone());
-                    curr_frame.locals = Some(let_env.clone())
-                }
-            }
-        };
+        }
         // eval body
         let mut results = map_scoped_vec_range(self, expr, (2, 0), |vm, val| vm.eval_weak(val));
         let res = results
@@ -601,6 +593,15 @@ impl Interpreter {
             }
         } else {
             panic!("box-ref argument needs to be a box")
+        }
+    }
+
+    #[inline]
+    fn extract_pair(&self, pair: &WeakVal) -> Option<(WeakVal, WeakVal)> {
+        let pair = pair.as_root().as_list()?;
+        match &self.get_ref(&pair)[..] {
+            [a, b] => Some((a.clone(), b.clone())),
+            _ => None,
         }
     }
 

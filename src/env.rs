@@ -1,6 +1,6 @@
 use crate::{
     eval::{Interpreter, ModuleState},
-    runtime::WeakVal,
+    runtime::{RootedVal, WeakVal},
 };
 use std::{borrow::Borrow, cell::RefCell, convert::TryFrom, ops::Index, rc::Rc};
 
@@ -117,11 +117,20 @@ impl Environment {
     }
 }
 
-impl From<HashMap<SymbolId, WeakVal>> for Environment {
-    fn from(values: HashMap<SymbolId, WeakVal>) -> Self {
+impl<I> From<I> for Environment
+where
+    I: Iterator<Item = (SymbolId, RootedVal)>,
+{
+    fn from(mut iter: I) -> Self {
+        let mut metadata = HashMap::new();
+        let mut values = HashMap::new();
+        while let Some((name, val)) = iter.next() {
+            metadata.insert(name, Default::default());
+            values.insert(name, val.downgrade());
+        }
         Self(Rc::new(RefCell::new(EnvironmentImpl {
             parent: None,
-            metadata: values.keys().map(|k| (*k, Metadata::default())).collect(),
+            metadata,
             values,
         })))
     }
