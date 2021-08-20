@@ -81,18 +81,12 @@ impl Interpreter {
     }
 
     fn eval_symbol(&mut self, expr: SymbolId) -> RootedVal {
-        if let Some(env) = self.get_locals() {
-            let mut env = env.clone();
-            loop {
-                if let Some(val) = env.get(expr) {
-                    return val.as_root();
-                }
-                if let Some(val) = env.into_parent() {
-                    env = val;
-                } else {
-                    break;
-                }
+        let mut curr_env = self.get_locals();
+        while let Some(env) = curr_env {
+            if let Some(val) = env.get(expr) {
+                return val.as_root();
             }
+            curr_env = env.into_parent();
         }
         self.get_globals()
             .get(expr)
