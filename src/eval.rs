@@ -107,36 +107,8 @@ impl Interpreter {
         }
         let func = self.get_ref(vals)[0].clone();
         let func_evaled = self.eval_weak(&func);
-        if let RootedVal::Macro(macro_body) = &func_evaled {
-            let macro_args = map_scoped_vec_range(self, vals, (1, 0), |_, val| val.as_root());
-            let expanded = self.expand_macro(macro_body, macro_args);
-            let res = self.eval(&expanded);
-            use RootedVal::*;
-            match &expanded {
-                List(inner) => {
-                    let mut vals = vals.clone();
-                    let replace_with = self.get_ref(inner).clone();
-                    let mut code_ref = self.get_mut(&mut vals);
-                    code_ref.clear();
-                    code_ref.clone_from(&replace_with);
-                }
-                Symbol(_) | NumberVal(_) | StringVal(_) => {
-                    let wrapped = vec![
-                        WeakVal::Symbol(BuiltinSymbols::Identity as SymbolId),
-                        expanded.as_weak(),
-                    ];
-                    let wrapped = self.heap.allocate(wrapped);
-                    let mut vals = vals.clone();
-                    let replace_with = self.get_ref(&wrapped).clone();
-                    let mut code_ref = self.get_mut(&mut vals);
-                    code_ref.clear();
-                    code_ref.clone_from(&replace_with);
-                }
-                Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed { .. } => {
-                    panic!("Macro invocation returned value that cannot be evaluated")
-                }
-            }
-            return res;
+        if let Ok(val) = self.try_eval_macro(func_evaled.clone(), vals) {
+            return val;
         }
         let evaled = map_scoped_vec_range(self, vals, (1, 0), |vm, val| vm.eval_weak(val));
         self.call(&func_evaled, evaled)
@@ -180,6 +152,42 @@ impl Interpreter {
         res
     }
 
+    fn try_eval_macro(&mut self, func_evaled: RootedVal, vals: &gc::Weak<Vec<WeakVal>>) -> Result<RootedVal, ()> {
+        if let RootedVal::Macro(macro_body) = &func_evaled {
+            let macro_args = map_scoped_vec_range(self, vals, (1, 0), |_, val| val.as_root());
+            let expanded = self.expand_macro(macro_body, macro_args);
+            let res = self.eval(&expanded);
+            use RootedVal::*;
+            match &expanded {
+                List(inner) => {
+                    let mut vals = vals.clone();
+                    let replace_with = self.get_ref(inner).clone();
+                    let mut code_ref = self.get_mut(&mut vals);
+                    code_ref.clear();
+                    code_ref.clone_from(&replace_with);
+                }
+                Symbol(_) | NumberVal(_) | StringVal(_) => {
+                    let wrapped = vec![
+                        WeakVal::Symbol(BuiltinSymbols::Identity as SymbolId),
+                        expanded.as_weak(),
+                    ];
+                    let wrapped = self.heap.allocate(wrapped);
+                    let replace_with = self.get_ref(&wrapped).clone();
+                    let mut vals = vals.clone();
+                    let mut code_ref = self.get_mut(&mut vals);
+                    code_ref.clear();
+                    code_ref.clone_from(&replace_with);
+                }
+                Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed { .. } => {
+                    panic!("Macro invocation returned value that cannot be evaluated")
+                }
+            }
+            Ok(res)
+        } else {
+            Err(())
+        }
+    }
+
     fn expand_macro(&mut self, macro_body: &gc::Root<Lambda>, args: Vec<RootedVal>) -> RootedVal {
         let (func_body, func_args, func_globals) = {
             let func = self.get_ref(macro_body);
@@ -205,10 +213,10 @@ impl Interpreter {
     fn try_eval_special_form(
         &mut self,
         vals: &gc::Weak<Vec<WeakVal>>,
-    ) -> Result<RootedVal, NotSpecialForm> {
+    ) -> Result<RootedVal, ()> {
         let symbol = match &self.get_ref(vals)[0] {
             WeakVal::Symbol(val) => *val,
-            _ => return Err(NotSpecialForm),
+            _ => return Err(()),
         };
         match symbol.try_into() {
             Ok(BuiltinSymbols::Define) => Ok(self.eval_define(vals)),
@@ -225,7 +233,7 @@ impl Interpreter {
             Ok(BuiltinSymbols::Export) => Ok(self.eval_export(vals)),
             Ok(BuiltinSymbols::Splice) => panic!("unquote-splicing is not quasiquote context"),
             Ok(BuiltinSymbols::BoxRef) => Ok(self.eval_box_ref(vals)),
-            _ => Err(NotSpecialForm),
+            _ => Err(()),
         }
     }
 
@@ -697,7 +705,6 @@ fn populate_env(
     env
 }
 
-struct NotSpecialForm;
 
 fn collect_function_definition_arguments(args: &[WeakVal]) -> FunctionArgs {
     let mut function_args = FunctionArgs {
