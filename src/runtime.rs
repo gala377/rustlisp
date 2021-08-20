@@ -15,32 +15,16 @@ pub struct FunctionArgs {
 
 pub struct Lambda {
     pub body: WeakVal,
+    pub name: Option<SymbolId>,
     pub args: FunctionArgs,
     pub env: Environment,
     pub globals: Environment,
 }
 
 impl Lambda {
-    fn new(env: Environment, args: FunctionArgs, body: WeakVal, globals: Environment) -> Self {
+    fn new(env: Environment, name: Option<SymbolId>, args: FunctionArgs, body: WeakVal, globals: Environment) -> Self {
         Self {
             env,
-            args,
-            globals,
-            body,
-        }
-    }
-}
-
-pub struct RuntimeFunc {
-    pub body: WeakVal,
-    pub name: SymbolId,
-    pub args: FunctionArgs,
-    pub globals: Environment,
-}
-
-impl RuntimeFunc {
-    fn new(name: SymbolId, args: FunctionArgs, body: WeakVal, globals: Environment) -> RuntimeFunc {
-        Self {
             name,
             args,
             globals,
@@ -48,6 +32,7 @@ impl RuntimeFunc {
         }
     }
 }
+
 
 pub type NativeFunc = Rc<dyn Fn(&mut Interpreter, Vec<RootedVal>) -> RootedVal>;
 
@@ -84,12 +69,6 @@ impl Allocable for Vec<WeakVal> {
     }
 }
 
-impl Allocable for RuntimeFunc {
-    fn tag() -> TypeTag {
-        TypeTag::RuntimeFunc
-    }
-}
-
 #[derive(Clone)]
 pub enum RootedVal {
     // Copy types
@@ -97,8 +76,7 @@ pub enum RootedVal {
     Symbol(SymbolId),
 
     // Reference immutable types
-    Func(Root<RuntimeFunc>),
-    Macro(Root<RuntimeFunc>),
+    Macro(Root<Lambda>),
     NativeFunc(NativeFunc),
     StringVal(Root<std::string::String>),
 
@@ -120,7 +98,6 @@ impl RootedVal {
             Symbol(x) => WeakVal::Symbol(x),
             StringVal(x) => WeakVal::StringVal(x.downgrade()),
             List(x) => WeakVal::List(x.downgrade()),
-            Func(x) => WeakVal::Func(x.downgrade()),
             NativeFunc(x) => WeakVal::NativeFunc(x),
             UserType(x) => WeakVal::UserType(x.downgrade()),
             Lambda(x) => WeakVal::Lambda(x.downgrade()),
@@ -168,8 +145,8 @@ impl RootedVal {
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(RuntimeFunc::new(name, args, body, globals));
-        Self::Func(inner)
+        let inner = heap.allocate(Lambda::new(Environment::new(), Some(name), args, body, globals));
+        Self::Lambda(inner)
     }
 
     pub fn macro_val(
@@ -179,7 +156,7 @@ impl RootedVal {
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(RuntimeFunc::new(name, args, body, globals));
+        let inner = heap.allocate(Lambda::new(Environment::new(), Some(name), args, body, globals));
         Self::Macro(inner)
     }
 
@@ -190,7 +167,7 @@ impl RootedVal {
         globals: Environment,
         heap: &mut Heap,
     ) -> RootedVal {
-        let inner = heap.allocate(Lambda::new(env, args, body, globals));
+        let inner = heap.allocate(Lambda::new(env, None, args, body, globals));
         Self::Lambda(inner)
     }
 
@@ -276,15 +253,14 @@ impl RootedVal {
                 res
             }
             NativeFunc(_) => std::string::String::from("Native function"),
-            Func(func) => {
-                let symbol = heap.deref_ptr(func).name;
-                format!("Function {}", symbol_table[symbol])
-            }
             Macro(func) => {
-                let symbol = heap.deref_ptr(func).name;
+                let symbol = heap.deref_ptr(func).name.unwrap();
                 format!("Macro {}", symbol_table[symbol])
             }
-            Lambda(_) => std::string::String::from("Lambda object"),
+            Lambda(func) => match heap.deref_ptr(func).name {
+                None => "Lambda function".into(),
+                Some(name) => format!("Function {}", symbol_table[name]),
+            }
             Boxed { inner, auto_deref } => {
                 if *auto_deref {
                     format!("Boxed*[{}]", heap.deref_ptr(inner).repr(heap, symbol_table))
@@ -316,7 +292,7 @@ impl RootedVal {
 
     pub fn is_callable(&self) -> bool {
         match self {
-            Self::Func(_) | Self::NativeFunc(_) | Self::Lambda(_) => true,
+            Self::NativeFunc(_) | Self::Lambda(_) => true,
             _ => false,
         }
     }
@@ -328,8 +304,7 @@ pub enum WeakVal {
     Symbol(SymbolId),
     StringVal(gc::Weak<std::string::String>),
     List(gc::Weak<Vec<WeakVal>>),
-    Func(gc::Weak<RuntimeFunc>),
-    Macro(gc::Weak<RuntimeFunc>),
+    Macro(gc::Weak<Lambda>),
     NativeFunc(NativeFunc),
     Lambda(gc::Weak<Lambda>),
     UserType(WeakStructPtr),
@@ -347,7 +322,6 @@ impl WeakVal {
             Symbol(x) => RootedVal::Symbol(x),
             StringVal(x) => RootedVal::StringVal(x.upgrade()),
             List(x) => RootedVal::List(x.upgrade()),
-            Func(x) => RootedVal::Func(x.upgrade()),
             NativeFunc(x) => RootedVal::NativeFunc(x),
             Lambda(x) => RootedVal::Lambda(x.upgrade()),
             UserType(x) => RootedVal::UserType(x.upgrade()),
@@ -415,15 +389,14 @@ impl WeakVal {
                 res
             }
             NativeFunc(_) => std::string::String::from("Native function"),
-            Func(func) => {
-                let symbol = heap.deref_ptr(func).name;
-                format!("Function {}", symbol_table[symbol])
-            }
             Macro(func) => {
-                let symbol = heap.deref_ptr(func).name;
+                let symbol = heap.deref_ptr(func).name.unwrap();
                 format!("Macro {}", symbol_table[symbol])
             }
-            Lambda(_) => std::string::String::from("Lambda object"),
+            Lambda(func) => match heap.deref_ptr(func).name {
+                None => "Lambda function".into(),
+                Some(name) => format!("Function {}", symbol_table[name]),
+            }
             UserType(_) => "Not supported".into(),
             Boxed { inner, auto_deref } => {
                 if *auto_deref {
@@ -443,47 +416,14 @@ impl WeakVal {
             Symbol(val) => symbol_table[*val].clone(),
             list @ List(_) => list.repr(heap, symbol_table),
             NativeFunc(_) => "Native function".to_owned(),
-            Func(func) => {
-                let name = &symbol_table[heap.deref_ptr(func).name];
-                format!("Runtime function {}", name)
-            }
             Macro(func) => {
-                let symbol = heap.deref_ptr(func).name;
+                let symbol = heap.deref_ptr(func).name.unwrap();
                 format!("Macro {}", symbol_table[symbol])
             }
-            Lambda(_) => "Lambda function".to_owned(),
-            _ => "Not supported".into(),
-        }
-    }
-
-    pub fn simple_repr(&self, heap: &Heap) -> std::string::String {
-        use WeakVal::*;
-        match self {
-            NumberVal(val) => val.to_string(),
-            StringVal(val) => heap.deref_ptr(val).clone(),
-            Symbol(val) => val.to_string(),
-            List(vals) => {
-                let mut res = std::string::String::from("(");
-                heap.deref_ptr(vals).iter().for_each(|val| {
-                    res += &val.simple_repr(heap);
-                    res += " ";
-                });
-                if res.chars().last().unwrap().is_whitespace() {
-                    res.pop();
-                }
-                res += ")";
-                res
+            Lambda(func) => match heap.deref_ptr(func).name {
+                None => "Lambda function".into(),
+                Some(name) => format!("Function {}", symbol_table[name]),
             }
-            NativeFunc(_) => "Native function".to_owned(),
-            Func(func) => {
-                let name = heap.deref_ptr(func).name;
-                format!("Runtime function {}", name)
-            }
-            Macro(func) => {
-                let symbol = heap.deref_ptr(func).name;
-                format!("Macro {}", symbol)
-            }
-            Lambda(_) => "Lambda function".to_owned(),
             _ => "Not supported".into(),
         }
     }

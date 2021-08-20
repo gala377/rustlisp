@@ -8,11 +8,7 @@ use std::collections::HashMap;
 #[cfg(debug)]
 use crate::gc::HeapMarked;
 
-use crate::{
-    env::{BuiltinSymbols, Environment, SymbolId, SymbolTable},
-    gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef},
-    runtime::{FunctionArgs, RootedVal, RuntimeFunc, WeakVal},
-};
+use crate::{env::{BuiltinSymbols, Environment, SymbolId, SymbolTable}, gc::{self, Heap, MarkSweep, ScopedMutPtr, ScopedPtr, ScopedRef}, runtime::{FunctionArgs, Lambda, RootedVal, WeakVal}};
 
 type Env = Environment;
 
@@ -138,7 +134,7 @@ impl Interpreter {
                     code_ref.clear();
                     code_ref.clone_from(&replace_with);
                 }
-                Func(_) | Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed { .. } => {
+                Macro(_) | UserType(_) | NativeFunc(_) | Lambda(_) | Boxed { .. } => {
                     panic!("Macro invocation returned value that cannot be evaluated")
                 }
             }
@@ -150,20 +146,6 @@ impl Interpreter {
 
     pub fn call(&mut self, func: &RootedVal, args: Vec<RootedVal>) -> RootedVal {
         let res = match func {
-            RootedVal::Func(func) => {
-                let (func_body, func_args, func_globals) = {
-                    let func = self.get_ref(func);
-                    (func.body.clone(), func.args.clone(), func.globals.clone())
-                };
-                let func_env = func_call_env(&func_args, args, &mut self.heap);
-                self.with_frame(
-                    FuncFrame {
-                        globals: func_globals,
-                        locals: Some(func_env),
-                    },
-                    |vm| vm.eval_weak(&func_body),
-                )
-            }
             RootedVal::Lambda(lambda_ref) => {
                 let (func_body, func_args, func_env, func_globals) = {
                     let func = self.get_ref(lambda_ref);
@@ -202,7 +184,7 @@ impl Interpreter {
 
     fn expand_macro(
         &mut self,
-        macro_body: &gc::Root<RuntimeFunc>,
+        macro_body: &gc::Root<Lambda>,
         args: Vec<RootedVal>,
     ) -> RootedVal {
         let (func_body, func_args, func_globals) = {

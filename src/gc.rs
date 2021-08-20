@@ -14,7 +14,7 @@ use crate::{
     env::Environment,
     eval::{FuncFrame, ModuleState},
     native::{NativeStruct, VirtualTable},
-    runtime::{self, Lambda, RuntimeFunc, WeakVal},
+    runtime::{self, Lambda, WeakVal},
 };
 
 #[cfg(all(feature = "hash_set", feature = "hashbrown"))]
@@ -31,7 +31,6 @@ pub enum TypeTag {
     Lambda,
     List,
     String,
-    RuntimeFunc,
     Boxed,
     UserType,
     None,
@@ -366,9 +365,6 @@ impl HeapEntry {
                 }
                 TypeTag::List => {
                     safe_drop_and_free::<Vec<WeakVal>>(ptr.as_ptr());
-                }
-                TypeTag::RuntimeFunc => {
-                    safe_drop_and_free::<runtime::RuntimeFunc>(ptr.as_ptr());
                 }
                 TypeTag::String => {
                     safe_drop_and_free::<String>(ptr.as_ptr());
@@ -747,7 +743,6 @@ impl MarkSweep {
         let walk_function = match header.tag {
             TypeTag::List => Self::visit_list,
             TypeTag::Lambda => Self::visit_lambda,
-            TypeTag::RuntimeFunc => Self::visit_func,
             TypeTag::UserType => Self::visit_user_type,
             TypeTag::Boxed => Self::visit_boxed,
             // We don't use catch all here so if we add any other type this
@@ -762,12 +757,6 @@ impl MarkSweep {
     fn visit_boxed(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
         let value_ref = Self::entry_data::<runtime::WeakVal>(heap, entry_index);
         self.visit_weak_val(marked, heap, value_ref);
-    }
-
-    fn visit_func(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
-        // todo: remove unsafe usage here
-        let func_ref = Self::entry_data::<RuntimeFunc>(heap, entry_index);
-        self.visit_weak_val(marked, heap, &func_ref.body);
     }
 
     fn visit_list(&self, marked: &mut Set<usize>, heap: &Heap, entry_index: usize) {
@@ -808,7 +797,6 @@ impl MarkSweep {
     fn visit_weak_val(&self, marked: &mut Set<usize>, heap: &Heap, val: &WeakVal) {
         use WeakVal::*;
         match val {
-            Func(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             Macro(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             Lambda(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
             List(ptr) => self.visit_entry(marked, heap, ptr.entry_index()),
