@@ -16,9 +16,6 @@ use crate::{
 
 type Env = Environment;
 
-/// Saved call stack
-pub type SavedCtx = Vec<FuncFrame>;
-
 #[derive(Clone)]
 pub struct FuncFrame {
     pub globals: Env,
